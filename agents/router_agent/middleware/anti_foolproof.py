@@ -41,7 +41,39 @@ class FoolproofMiddleware(BaseHTTPMiddleware):
     """Intercepts write operations and validates them before execution."""
 
     DESTRUCTIVE_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
-        {"delete", "remove", "purge", "drop", "truncate", "destroy", "wipe", "erase", "burn"}
+        {
+            # English
+            "delete",
+            "remove",
+            "purge",
+            "drop",
+            "truncate",
+            "destroy",
+            "wipe",
+            "erase",
+            "burn",
+            # 中文 — 危险操作关键词
+            "删除",
+            "移除",
+            "清空",
+            "清除",
+            "删除数据",
+            "销毁",
+            "抹除",
+            "擦除",
+            "干掉",
+            "卸载",
+            "格式化",
+            "重置",
+            "裁掉",
+            "解雇",
+            "开除",
+            "下岗",
+            "优化掉",
+            "清理",
+            "批量删",
+            "一键删",
+        }
     )
 
     def __init__(self, app: ASGIApp, config: FoolproofConfig | None = None) -> None:

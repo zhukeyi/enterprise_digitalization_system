@@ -140,3 +140,42 @@ class TestChatCompletionsEndpoint:
             headers={"X-Foolproof-Confirm": "yes"},
         )
         assert resp.status_code == 200  # bypass works, proceeds to mock reply
+
+    async def test_anti_foolproof_blocks_chinese_keyword(self, client: AsyncClient) -> None:
+        """防呆机制应拦截中文危险关键词."""
+        payload = {
+            "messages": [{"role": "user", "content": "请帮我删除所有数据库记录"}],
+        }
+        resp = await client.post("/v1/chat/completions", json=payload)
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["error"]["code"] == "DESTRUCTIVE_OPERATION"
+
+    async def test_anti_foolproof_blocks_chinese_destroy(self, client: AsyncClient) -> None:
+        """防呆机制应拦截'销毁'关键词."""
+        payload = {
+            "messages": [{"role": "user", "content": "请销毁所有敏感数据"}],
+        }
+        resp = await client.post("/v1/chat/completions", json=payload)
+        assert resp.status_code == 400
+
+    async def test_anti_foolproof_blocks_chinese_HR_keywords(self, client: AsyncClient) -> None:
+        """防呆机制应拦截 HR 相关危险操作（裁掉/解雇/开除）."""
+        for word in ["裁掉", "解雇", "开除"]:
+            payload = {
+                "messages": [{"role": "user", "content": f"请{word}张三"}],
+            }
+            resp = await client.post("/v1/chat/completions", json=payload)
+            assert resp.status_code == 400, f"Keyword '{word}' not blocked"
+
+    async def test_anti_foolproof_chinese_bypass(self, client: AsyncClient) -> None:
+        """带确认头时，中文关键词也应被放行."""
+        payload = {
+            "messages": [{"role": "user", "content": "确认删除所有过期记录"}],
+        }
+        resp = await client.post(
+            "/v1/chat/completions",
+            json=payload,
+            headers={"X-Foolproof-Confirm": "yes"},
+        )
+        assert resp.status_code == 200
