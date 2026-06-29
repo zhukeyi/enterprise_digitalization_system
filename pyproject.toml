@@ -164,6 +164,8 @@ ignore = [
     "E501",  # line-too-long (handled by Black)
     "B008",  # do-not-perform-function-calls-in-argument-defaults
     "SIM108", # use-ternary-operator (style preference)
+    "RUF001", # ambiguous-unicode-character (false positives for CJK text)
+    "RUF043", # ambiguous-unicode-regex (false positives for CJK + regex)
 ]
 fixable = ["ALL"]
 

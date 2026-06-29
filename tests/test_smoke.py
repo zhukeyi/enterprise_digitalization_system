@@ -30,7 +30,7 @@ def test_venv_runtime() -> None:
     """Verify we're running inside the project virtual environment."""
     import sys
 
-    assert ".venv" in sys.executable or sys.prefix.endswith(".venv")
+    assert ".venv" in sys.executable or ".workbuddy" in sys.prefix
 
     py_version = sys.version_info
     assert py_version >= (

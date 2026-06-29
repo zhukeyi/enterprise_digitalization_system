@@ -1,0 +1,59 @@
+# ===================================================================
+# FDE Router — Routing Policy
+# ===================================================================
+# Rules are evaluated in priority order (lower number = higher priority).
+# The first matching rule wins. Add new rules at the bottom.
+#
+# Condition fields:
+#   complexity: simple | medium | complex | any
+#   keywords:   [list of trigger words]
+#   pattern:    regex pattern
+#   min_tokens: minimum message length
+# ===================================================================
+
+version: "1.0"
+default_model: "fde/mock-v1"
+
+rules:
+  # ── Confidential / sensitive queries stay local ─────────────────
+  - name: confidential-local
+    model: "fde/mock-v1"
+    priority: 5
+    conditions:
+      keywords:
+        - "密码"
+        - "password"
+        - "密钥"
+        - "token"
+        - "内网"
+        - "机密"
+        - "保密"
+        - "身份证"
+        - "银行卡"
+
+  # ── Simple queries → cheapest model ─────────────────────────────
+  - name: simple-cheapest
+    model: "fde/mock-v1"
+    priority: 10
+    conditions:
+      complexity: simple
+
+  # ── Medium complexity → balanced ────────────────────────────────
+  - name: medium-balanced
+    model: "deepseek/deepseek-chat"
+    priority: 15
+    conditions:
+      complexity: medium
+
+  # ── Complex queries → best model ────────────────────────────────
+  - name: complex-best
+    model: "zhipu/glm-4-flash"
+    priority: 20
+    conditions:
+      complexity: complex
+
+  # ── Catch-all ────────────────────────────────────────────────────
+  - name: default-fallback
+    model: "fde/mock-v1"
+    priority: 1000
+    conditions: {}
