@@ -11,7 +11,6 @@ All strategies support configurable chunk size, overlap, and token counting.
 from __future__ import annotations
 
 import logging
-import re
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -176,7 +175,7 @@ class FixedSizeChunker(BaseChunker):
             if self.use_token_count:
                 content = self._grow_by_tokens(text, start, self.chunk_size)
             else:
-                content = text[start:start + self.chunk_size]
+                content = text[start : start + self.chunk_size]
 
             if not content:
                 break
@@ -237,16 +236,16 @@ class SemanticChunker(BaseChunker):
 
     # Separator priority: highest = most preferred
     SEPARATORS: list[str] = [
-        "\n\n",       # Paragraph break
-        "\n",         # Line break
-        "。",         # Chinese period
-        "！",         # Chinese exclamation
-        "？",         # Chinese question mark
-        ". ",         # English period + space
-        "! ",         # English exclamation + space
-        "? ",         # English question mark + space
-        "；",         # Chinese semicolon
-        "；\n",       # Chinese semicolon + newline
+        "\n\n",  # Paragraph break
+        "\n",  # Line break
+        "。",  # Chinese period
+        "！",  # Chinese exclamation
+        "？",  # Chinese question mark
+        ". ",  # English period + space
+        "! ",  # English exclamation + space
+        "? ",  # English question mark + space
+        "；",  # Chinese semicolon
+        "；\n",  # Chinese semicolon + newline
     ]
 
     def chunk_text(self, text: str) -> list[str]:
@@ -529,5 +528,10 @@ def chunk_documents(
         chunks = chunker.chunk_document(doc)
         all_chunks.extend(chunks)
 
-    logger.info("Chunked %d documents into %d chunks (strategy=%s)", len(documents), len(all_chunks), strategy)
+    logger.info(
+        "Chunked %d documents into %d chunks (strategy=%s)",
+        len(documents),
+        len(all_chunks),
+        strategy,
+    )
     return all_chunks

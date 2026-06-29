@@ -14,11 +14,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agents.rag_agent.document_parser import (
-    DocxParser,
     Document,
+    DocxParser,
     MarkdownParser,
-    ParserFactory,
     ParserError,
+    ParserFactory,
     PdfParser,
     PlainTextParser,
     PptxParser,
@@ -26,7 +26,6 @@ from agents.rag_agent.document_parser import (
     XlsxParser,
     detect_format,
 )
-
 
 # ══════════════════════════════════════════════════════════════════
 # Format Detection Tests

@@ -5,7 +5,7 @@ M1-T8: Tests run without a real Qdrant instance — qdrant_client is mocked.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,7 +16,6 @@ from agents.rag_agent.vector_store import (
     VectorStore,
     VectorStoreError,
 )
-
 
 # ══════════════════════════════════════════════════════════════════
 # Fixtures
@@ -136,9 +135,7 @@ class TestVectorStoreInit:
 
 
 class TestVectorStoreHealth:
-    def test_health_check(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_health_check(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         result = store.health_check()
         assert result["status"] == "ok"
@@ -164,24 +161,18 @@ class TestVectorStoreHealth:
 
 
 class TestVectorStoreCollection:
-    def test_collection_exists(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_collection_exists(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         exists = store.collection_exists("test_collection")
         assert exists is True
         mock_qdrant_client.get_collections.assert_called_once()
 
-    def test_collection_not_exists(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_collection_not_exists(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         exists = store.collection_exists("nonexistent")
         assert exists is False
 
-    def test_create_collection(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_create_collection(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         config = CollectionConfig(name="new_coll", vector_size=768)
         result = store.create_collection(config)
@@ -195,9 +186,7 @@ class TestVectorStoreCollection:
         result = store.create_collection(CollectionConfig(name="test_collection"))
         assert result["status"] == "exists"
 
-    def test_delete_collection(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_delete_collection(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         result = store.delete_collection("test_collection")
         assert result is True
@@ -214,9 +203,7 @@ class TestVectorStoreCollection:
 
 
 class TestVectorStorePoints:
-    def test_upsert(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_upsert(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         points = [
             VectorRecord(id=1, vector=[0.1, 0.2, 0.3], payload={"text": "hello"}),
@@ -225,13 +212,11 @@ class TestVectorStorePoints:
         count = store.upsert(points)
         assert count == 2
         mock_qdrant_client.upsert.assert_called_once()
-        args, kwargs = mock_qdrant_client.upsert.call_args
+        _args, kwargs = mock_qdrant_client.upsert.call_args
         assert kwargs["collection_name"] == "fde_documents"
         assert len(kwargs["points"]) == 2
 
-    def test_upsert_empty_vectors(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_upsert_empty_vectors(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         points = [
             VectorRecord(id=1, vector=None, payload={"text": "no-vector"}),
@@ -240,9 +225,7 @@ class TestVectorStorePoints:
         assert count == 0
         mock_qdrant_client.upsert.assert_not_called()
 
-    def test_search(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_search(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         results = store.search(vector=[0.1, 0.2, 0.3], top_k=5)
         assert len(results) == 1
@@ -250,9 +233,7 @@ class TestVectorStorePoints:
         assert results[0].score == 0.95
         mock_qdrant_client.search.assert_called_once()
 
-    def test_search_with_filter(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_search_with_filter(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         results = store.search(
             vector=[0.1, 0.2, 0.3],
@@ -260,19 +241,15 @@ class TestVectorStorePoints:
         )
         assert len(results) == 1
         mock_qdrant_client.search.assert_called_once()
-        args, kwargs = mock_qdrant_client.search.call_args
+        _args, kwargs = mock_qdrant_client.search.call_args
         assert kwargs["query_filter"] is not None
 
-    def test_count(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_count(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         count = store.count()
         assert count == 42
 
-    def test_delete_points(
-        self, store: VectorStore, mock_qdrant_client: MagicMock
-    ) -> None:
+    def test_delete_points(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
         count = store.delete_points(["point-1", "point-2"])
         assert count == 2
@@ -319,9 +296,7 @@ class TestVectorStoreAsyncPoints:
         exists = await store.async_collection_exists("test_collection")
         assert exists is True
 
-        result = await store.async_create_collection(
-            CollectionConfig(name="new_coll")
-        )
+        result = await store.async_create_collection(CollectionConfig(name="new_coll"))
         assert result["status"] == "created"
 
         deleted = await store.async_delete_collection("test_collection")
@@ -331,9 +306,7 @@ class TestVectorStoreAsyncPoints:
         self, store: VectorStore, mock_qdrant_async_client: AsyncMock
     ) -> None:
         store._async_client = mock_qdrant_async_client
-        result = await store.async_create_collection(
-            CollectionConfig(name="test_collection")
-        )
+        result = await store.async_create_collection(CollectionConfig(name="test_collection"))
         assert result["status"] == "exists"
 
 

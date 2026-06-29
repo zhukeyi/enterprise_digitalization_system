@@ -20,7 +20,6 @@ from agents.rag_agent.retriever import (
 )
 from agents.rag_agent.vector_store import VectorRecord
 
-
 # ══════════════════════════════════════════════════════════════════
 # Fixtures
 # ══════════════════════════════════════════════════════════════════
@@ -82,8 +81,11 @@ class TestBM25Index:
             ["hello world", "foo bar", "machine learning", "data science", "python programming"],
             ids=["custom-1", "custom-2", "custom-3", "custom-4", "custom-5"],
             metadatas=[
-                {"type": "greeting"}, {"type": "test"}, {"type": "ml"},
-                {"type": "data"}, {"type": "lang"},
+                {"type": "greeting"},
+                {"type": "test"},
+                {"type": "ml"},
+                {"type": "data"},
+                {"type": "lang"},
             ],
         )
         results = idx.search("hello", top_k=5)
@@ -200,7 +202,9 @@ class TestHybridSearchEngine:
         mock_embed.encode_queries.assert_called_once()
         mock_store.search.assert_called_once()
 
-    async def test_search_bm25_only(self, sample_documents: list[str], sample_ids: list[str]) -> None:
+    async def test_search_bm25_only(
+        self, sample_documents: list[str], sample_ids: list[str]
+    ) -> None:
         """Search should work with BM25 only (no vector configured)."""
         engine = HybridSearchEngine()
         engine.index_documents(sample_documents, sample_ids)

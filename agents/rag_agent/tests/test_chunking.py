@@ -11,14 +11,13 @@ import pytest
 from agents.rag_agent.chunking import (
     Chunk,
     ChunkerFactory,
+    Document,
     FixedSizeChunker,
     RecursiveChunker,
     SemanticChunker,
     _count_tokens,
     chunk_documents,
 )
-from agents.rag_agent.chunking import Document
-
 
 # ══════════════════════════════════════════════════════════════════
 # Helpers
@@ -249,7 +248,9 @@ class TestChunkerFactory:
 class TestChunkDocuments:
     def test_single_document(self) -> None:
         docs = [_make_doc("Hello world. " * 20, "doc-1")]
-        chunks = chunk_documents(docs, strategy="fixed_size", chunk_size=50, chunk_overlap=10, use_token_count=False)
+        chunks = chunk_documents(
+            docs, strategy="fixed_size", chunk_size=50, chunk_overlap=10, use_token_count=False
+        )
         assert len(chunks) >= 2
         assert all(isinstance(c, Chunk) for c in chunks)
 
@@ -266,7 +267,9 @@ class TestChunkDocuments:
         doc.metadata["custom"] = "value"
         doc.metadata["author"] = "test"
 
-        chunks = chunk_documents([doc], strategy="fixed_size", chunk_size=100, use_token_count=False)
+        chunks = chunk_documents(
+            [doc], strategy="fixed_size", chunk_size=100, use_token_count=False
+        )
         assert len(chunks) >= 1
         assert chunks[0].metadata.get("custom") == "value"
         assert chunks[0].metadata.get("author") == "test"

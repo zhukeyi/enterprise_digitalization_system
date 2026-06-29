@@ -8,8 +8,7 @@ re-ranking. Supports configurable weights per search method.
 from __future__ import annotations
 
 import logging
-import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -223,13 +222,11 @@ def rrf_fusion(
                 rrf_scores[doc_id] = (rrf_score, result)
 
     # Sort by RRF score descending
-    sorted_results = sorted(
-        rrf_scores.items(), key=lambda x: x[1][0], reverse=True
-    )
+    sorted_results = sorted(rrf_scores.items(), key=lambda x: x[1][0], reverse=True)
 
     # Build final list
     fused: list[SearchResult] = []
-    for rank, (doc_id, (score, result)) in enumerate(sorted_results[:top_k]):
+    for rank, (_doc_id, (score, result)) in enumerate(sorted_results[:top_k]):
         result.score = round(score, 4)
         result.rank = rank + 1
         fused.append(result)
@@ -323,9 +320,7 @@ class HybridSearchEngine:
         bm25_coro = asyncio.to_thread(self._search_bm25, query)
         vector_coro = self._search_vector(query, filter_conditions)
 
-        bm25_results, vector_results = await asyncio.gather(
-            bm25_coro, vector_coro
-        )
+        bm25_results, vector_results = await asyncio.gather(bm25_coro, vector_coro)
 
         # RRF fusion
         result_lists = []

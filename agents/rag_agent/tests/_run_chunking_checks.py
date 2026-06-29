@@ -1,15 +1,16 @@
 """Standalone chunking logic checker (avoids heavy module imports)."""
+
 import importlib.util
 import sys
 
 # Load module in isolation
-spec = importlib.util.spec_from_file_location(
-    "chk", "agents/rag_agent/chunking.py"
-)
+spec = importlib.util.spec_from_file_location("chk", "agents/rag_agent/chunking.py")
 mod = importlib.util.module_from_spec(spec)
+
 
 class Stub:
     pass
+
 
 sys.modules["agents"] = Stub()
 sys.modules["agents.rag_agent"] = Stub()
@@ -24,12 +25,14 @@ from_chunks = mod.chunk_documents
 
 errors = []
 
+
 def check(name, condition, msg=""):
     if condition:
         print(f"  ✓ {name}")
     else:
         print(f"  ✗ {name}: {msg}")
         errors.append(name)
+
 
 print("=== FixedSizeChunker ===")
 c = FS(100, 20, False)
@@ -52,7 +55,10 @@ check("chinese boundary", len(SC(500, 50, False).chunk_text("一。二。三。"
 check("small text single chunk", len(SC(1000).chunk_text("Short.")) == 1)
 
 print("\n=== RecursiveChunker ===")
-check("paragraph split", len(RC(500, 50, False).chunk_text("\n\n".join([f"P{i}." for i in range(10)]))) >= 2)
+check(
+    "paragraph split",
+    len(RC(500, 50, False).chunk_text("\n\n".join([f"P{i}." for i in range(10)]))) >= 2,
+)
 check("fits in one chunk", len(RC(1000).chunk_text("Short doc.")) == 1)
 check("long text split", len(RC(50, 10, False).chunk_text("A" * 200)) >= 3)
 check("char fallback", len(RC(10, 0, False).chunk_text("ABCDEFGHIJKLMNOPQRSTUVWXYZ")) >= 2)
@@ -78,8 +84,7 @@ print("\n=== chunk_documents ===")
 chunks = from_chunks([D(id="d1", content="Hello world. " * 20)], "fixed_size", 50, 10, False)
 check("single doc produces chunks", len(chunks) >= 2)
 chunks2 = from_chunks(
-    [D(id="d1", content="A " * 50), D(id="d2", content="B " * 50)],
-    "recursive", 100, 20, False
+    [D(id="d1", content="A " * 50), D(id="d2", content="B " * 50)], "recursive", 100, 20, False
 )
 check("multiple docs produce chunks", len(chunks2) >= 2)
 

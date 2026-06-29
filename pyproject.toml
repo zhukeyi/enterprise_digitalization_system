@@ -163,9 +163,11 @@ select = [
 ignore = [
     "E501",  # line-too-long (handled by Black)
     "B008",  # do-not-perform-function-calls-in-argument-defaults
+    "B904",  # raise-without-from-inside-except (intentional in lazy-import blocks)
     "SIM108", # use-ternary-operator (style preference)
     "RUF001", # ambiguous-unicode-character (false positives for CJK text)
     "RUF043", # ambiguous-unicode-regex (false positives for CJK + regex)
+    "RUF012", # mutable-class-default (intentional for subclass overridable attrs)
 ]
 fixable = ["ALL"]
 
@@ -191,10 +193,24 @@ no_implicit_optional = true
 check_untyped_defs = true
 explicit_package_bases = true
 
-# Per-module overrides added when corresponding optional dependencies are installed.
-# [[tool.mypy.overrides]]
-# module = ["qdrant_client.*"]
-# ignore_missing_imports = true
+# Per-module overrides for packages without type stubs.
+[[tool.mypy.overrides]]
+module = [
+    "agents.*.tests.*",
+    "tests.*",
+]
+disable_error_code = ["no-any-return", "arg-type", "no-untyped-call", "no-untyped-def", "var-annotated", "assignment", "union-attr"]
+
+[[tool.mypy.overrides]]
+module = [
+    "qdrant_client.*",
+    "rank_bm25",
+    "jieba",
+    "openpyxl",
+    "sentence_transformers",
+    "pymupdf",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

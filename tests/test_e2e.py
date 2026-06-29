@@ -11,20 +11,18 @@ All tests use mocked external services to avoid real infrastructure.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from agents.rag_agent.chunking import ChunkerFactory, Document
 from agents.rag_agent.document_parser import ParserFactory
-from agents.rag_agent.retriever import HybridSearchEngine, HybridSearchConfig
+from agents.rag_agent.retriever import HybridSearchConfig, HybridSearchEngine
 from agents.rag_agent.vector_store import VectorRecord, VectorStore
 from agents.router_agent.adapters.base import MockAdapter
 from agents.router_agent.models.request import ChatCompletionRequest, Message
 from agents.router_agent.models.response import ChatCompletionResponse
-
 
 # ══════════════════════════════════════════════════════════════════
 # E2E Test 1: Parse → Chunk Pipeline
@@ -36,7 +34,10 @@ class TestParseChunkPipeline:
         """Parse a text file, then chunk the result."""
         # Create test document
         text_content = "\n\n".join(
-            [f"This is paragraph {i} about artificial intelligence and machine learning." for i in range(5)]
+            [
+                f"This is paragraph {i} about artificial intelligence and machine learning."
+                for i in range(5)
+            ]
         )
         test_file = tmp_path / "test.md"
         test_file.write_text(text_content, encoding="utf-8")
@@ -47,7 +48,9 @@ class TestParseChunkPipeline:
         assert len(docs) == 1
 
         # Step 2: Chunk
-        chunker = ChunkerFactory().create("recursive", chunk_size=200, chunk_overlap=20, use_token_count=False)
+        chunker = ChunkerFactory().create(
+            "recursive", chunk_size=200, chunk_overlap=20, use_token_count=False
+        )
         chunks = chunker.chunk_document(
             Document(id="test-doc", content=docs[0].content, metadata=docs[0].metadata)
         )
@@ -65,7 +68,9 @@ class TestParseChunkPipeline:
         assert len(docs) == 1
 
         for strategy in ["fixed_size", "semantic", "recursive"]:
-            chunker = ChunkerFactory().create(strategy, chunk_size=150, chunk_overlap=20, use_token_count=False)
+            chunker = ChunkerFactory().create(
+                strategy, chunk_size=150, chunk_overlap=20, use_token_count=False
+            )
             chunks = chunker.chunk_document(Document(id="test", content=docs[0].content))
             assert len(chunks) >= 1, f"Strategy '{strategy}' produced no chunks"
 
@@ -90,7 +95,10 @@ class TestEmbedStoreSearchPipeline:
         mock_embed.encode_documents.return_value = [[0.2] * 1024]
 
         # Create documents
-        texts = ["Artificial intelligence is transforming the world.", "Python is great for data science."]
+        texts = [
+            "Artificial intelligence is transforming the world.",
+            "Python is great for data science.",
+        ]
         ids = ["doc-1", "doc-2"]
 
         # Build hybrid search
@@ -143,7 +151,10 @@ class TestRouterGatewayPipeline:
 
         response = await adapter.complete(request)
         assert "FDE" in response.choices[0].message.content
-        assert "RAG" in response.choices[0].message.content or "AI" in response.choices[0].message.content
+        assert (
+            "RAG" in response.choices[0].message.content
+            or "AI" in response.choices[0].message.content
+        )
 
     @pytest.mark.asyncio
     async def test_router_fallback_request(self) -> None:
@@ -190,9 +201,13 @@ class TestFullPipeline:
         assert len(parsed_docs) == 1
 
         # ── Step 2: Chunk the parsed document ──
-        chunker = ChunkerFactory().create("recursive", chunk_size=100, chunk_overlap=10, use_token_count=False)
+        chunker = ChunkerFactory().create(
+            "recursive", chunk_size=100, chunk_overlap=10, use_token_count=False
+        )
         chunks = chunker.chunk_document(
-            Document(id="fde-intro", content=parsed_docs[0].content, metadata=parsed_docs[0].metadata)
+            Document(
+                id="fde-intro", content=parsed_docs[0].content, metadata=parsed_docs[0].metadata
+            )
         )
         assert len(chunks) >= 1
 
@@ -202,7 +217,9 @@ class TestFullPipeline:
 
         mock_store = MagicMock()
         mock_store.search.return_value = [
-            VectorRecord(id="fde-intro", payload={"text": "FDE supports RAG retrieval"}, score=0.87),
+            VectorRecord(
+                id="fde-intro", payload={"text": "FDE supports RAG retrieval"}, score=0.87
+            ),
         ]
 
         engine = HybridSearchEngine(
@@ -272,8 +289,9 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_anti_foolproof_middleware(self) -> None:
         """Anti-foolproof middleware should intercept destructive requests."""
+        from httpx import ASGITransport, AsyncClient
+
         from agents.router_agent.main import app
-        from httpx import AsyncClient, ASGITransport
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

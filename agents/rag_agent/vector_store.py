@@ -8,7 +8,7 @@ collection CRUD, and point (vector) operations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -50,7 +50,7 @@ class CollectionConfig(BaseModel):
     )
 
     @property
-    def distance_metric(self) -> int:
+    def distance_metric(self) -> str:
         """Map distance string to Qdrant's internal enum."""
         mapping = {"Cosine": "Cosine", "Dot": "Dot", "Euclid": "Euclid"}
         return mapping.get(self.distance, "Cosine")
@@ -79,7 +79,7 @@ class QdrantConfig:
     grpc_port: int = 6334
     prefer_grpc: bool = False
     api_key: str | None = None
-    timeout: float = 10.0
+    timeout: int = 10
     collection_name: str = "fde_documents"
 
     @classmethod
@@ -103,7 +103,7 @@ class QdrantConfig:
             grpc_port=int(os.environ.get("QDRANT_GRPC_PORT", "6334")),
             prefer_grpc=os.environ.get("QDRANT_PREFER_GRPC", "").lower() == "true",
             api_key=os.environ.get("QDRANT_API_KEY") or None,
-            timeout=float(os.environ.get("QDRANT_TIMEOUT", "10")),
+            timeout=int(os.environ.get("QDRANT_TIMEOUT", "10")),
             collection_name=os.environ.get("QDRANT_COLLECTION", "fde_documents"),
         )
 
@@ -191,11 +191,10 @@ class VectorStore:
             self._client = None
         if self._async_client is not None:
             import asyncio
+            from contextlib import suppress
 
-            try:
+            with suppress(RuntimeError):
                 asyncio.get_event_loop().run_until_complete(self._async_client.close())
-            except RuntimeError:
-                pass  # No event loop running
             self._async_client = None
         self._connected = False
 
@@ -211,7 +210,6 @@ class VectorStore:
             VectorStoreError: If Qdrant is unreachable.
         """
         try:
-            from qdrant_client.http import models as qmodels
 
             collections = self.client.get_collections()
             return {
@@ -275,13 +273,20 @@ class VectorStore:
             collection_name=cfg.name,
             vectors_config=qmodels.VectorParams(
                 size=cfg.vector_size,
-                distance=cfg.distance,
+                distance=qmodels.Distance[
+                    cfg.distance.upper()
+                ],
                 hnsw_config=qmodels.HnswConfigDiff(**cfg.hnsw_config),
             ),
             optimizers_config=qmodels.OptimizersConfigDiff(**cfg.optimizers_config),
         )
 
-        logger.info("Created collection '%s' (size=%d, distance=%s)", cfg.name, cfg.vector_size, cfg.distance)
+        logger.info(
+            "Created collection '%s' (size=%d, distance=%s)",
+            cfg.name,
+            cfg.vector_size,
+            cfg.distance,
+        )
         return {"name": cfg.name, "status": "created"}
 
     async def async_create_collection(
@@ -300,7 +305,9 @@ class VectorStore:
             collection_name=cfg.name,
             vectors_config=qmodels.VectorParams(
                 size=cfg.vector_size,
-                distance=cfg.distance,
+                distance=qmodels.Distance[
+                    cfg.distance.upper()
+                ],
                 hnsw_config=qmodels.HnswConfigDiff(**cfg.hnsw_config),
             ),
             optimizers_config=qmodels.OptimizersConfigDiff(**cfg.optimizers_config),
@@ -369,9 +376,7 @@ class VectorStore:
         logger.debug("Upserted %d points to '%s'", len(qdrant_points), collection)
         return len(qdrant_points)
 
-    async def async_upsert(
-        self, points: list[VectorRecord], collection: str | None = None
-    ) -> int:
+    async def async_upsert(self, points: list[VectorRecord], collection: str | None = None) -> int:
         """Async: upsert vectors."""
         from qdrant_client.http import models as qmodels
 
@@ -425,9 +430,7 @@ class VectorStore:
 
         query_filter = None
         if filter_conditions:
-            query_filter = qmodels.Filter(
-                must=_build_filter_conditions(filter_conditions)
-            )
+            query_filter = qmodels.Filter(must=_build_filter_conditions(filter_conditions))
 
         search_params = qmodels.SearchParams(
             hnsw_ef=128,
@@ -467,9 +470,7 @@ class VectorStore:
 
         query_filter = None
         if filter_conditions:
-            query_filter = qmodels.Filter(
-                must=_build_filter_conditions(filter_conditions)
-            )
+            query_filter = qmodels.Filter(must=_build_filter_conditions(filter_conditions))
 
         search_params = qmodels.SearchParams(
             hnsw_ef=128,
@@ -497,14 +498,14 @@ class VectorStore:
     def count(self, collection: str | None = None) -> int:
         """Count points in a collection."""
         collection = collection or self.config.collection_name
-        result = self.client.count(collection_name=collection)
-        return result.count
+        result: Any = self.client.count(collection_name=collection)
+        return result.count  # type: ignore[no-any-return]
 
     async def async_count(self, collection: str | None = None) -> int:
         """Async: count points in a collection."""
         collection = collection or self.config.collection_name
-        result = await self.async_client.count(collection_name=collection)
-        return result.count
+        result: Any = await self.async_client.count(collection_name=collection)
+        return result.count  # type: ignore[no-any-return]
 
     def delete_points(
         self,
@@ -563,13 +564,21 @@ def _build_filter_conditions(
         if "__" in key:
             field, op = key.rsplit("__", 1)
             if op == "gt":
-                must_conditions.append(qmodels.FieldCondition(key=field, range=qmodels.Range(gt=value)))
+                must_conditions.append(
+                    qmodels.FieldCondition(key=field, range=qmodels.Range(gt=value))
+                )
             elif op == "gte":
-                must_conditions.append(qmodels.FieldCondition(key=field, range=qmodels.Range(gte=value)))
+                must_conditions.append(
+                    qmodels.FieldCondition(key=field, range=qmodels.Range(gte=value))
+                )
             elif op == "lt":
-                must_conditions.append(qmodels.FieldCondition(key=field, range=qmodels.Range(lt=value)))
+                must_conditions.append(
+                    qmodels.FieldCondition(key=field, range=qmodels.Range(lt=value))
+                )
             elif op == "lte":
-                must_conditions.append(qmodels.FieldCondition(key=field, range=qmodels.Range(lte=value)))
+                must_conditions.append(
+                    qmodels.FieldCondition(key=field, range=qmodels.Range(lte=value))
+                )
             elif op == "in":
                 must_conditions.append(
                     qmodels.FieldCondition(key=field, match=qmodels.MatchAny(any=value))

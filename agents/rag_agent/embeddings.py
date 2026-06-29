@@ -144,9 +144,7 @@ class EmbeddingModel:
 
     # ── Batch Embedding ─────────────────────────────────────────
 
-    async def embed_batch(
-        self, texts: list[str], **kwargs: Any
-    ) -> list[EmbeddingResult]:
+    async def embed_batch(self, texts: list[str], **kwargs: Any) -> list[EmbeddingResult]:
         """Embed a batch of texts.
 
         Args:
@@ -189,7 +187,7 @@ class EmbeddingModel:
         latency_per = (elapsed / max(1, len(texts))) * 1000
 
         results = []
-        for i, (text, vec) in enumerate(zip(texts, vectors)):
+        for i, (text, vec) in enumerate(zip(texts, vectors, strict=False)):
             results.append(
                 EmbeddingResult(
                     index=i,
@@ -228,9 +226,7 @@ class EmbeddingModel:
         )
         return [v.tolist() if hasattr(v, "tolist") else list(v) for v in vectors]
 
-    async def encode_documents(
-        self, documents: list[str]
-    ) -> list[list[float]]:
+    async def encode_documents(self, documents: list[str]) -> list[list[float]]:
         """Encode documents for indexing (no instruction prefix)."""
         import asyncio
 
@@ -250,7 +246,7 @@ class EmbeddingModel:
         if self._model is not None:
             dim = self._model.get_sentence_embedding_dimension()
             if dim is not None:
-                return dim
+                return dim  # type: ignore[no-any-return]
         return 1024  # BGE-M3 default
 
     def get_config(self) -> EmbeddingConfig:

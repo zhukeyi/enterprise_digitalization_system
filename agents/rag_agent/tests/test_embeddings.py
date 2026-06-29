@@ -6,12 +6,16 @@ the real model (which requires PyTorch + transformers).
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.rag_agent.embeddings import EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingResult
-
+from agents.rag_agent.embeddings import (
+    EmbeddingConfig,
+    EmbeddingError,
+    EmbeddingModel,
+    EmbeddingResult,
+)
 
 # ══════════════════════════════════════════════════════════════════
 # Fixtures
@@ -70,9 +74,7 @@ class TestEmbeddingConfig:
 
 
 class TestEmbeddingModelLoad:
-    def test_lazy_load(
-        self, model: EmbeddingModel, mock_sentence_transformer: MagicMock
-    ) -> None:
+    def test_lazy_load(self, model: EmbeddingModel, mock_sentence_transformer: MagicMock) -> None:
         """Model should not load until first use."""
         assert model._model is None
         assert model.is_loaded() is False
@@ -97,16 +99,16 @@ class TestEmbeddingModelLoad:
 
     def test_missing_dependency(self, config: EmbeddingConfig) -> None:
         model = EmbeddingModel(config=config)
-        with patch.dict("sys.modules", {"sentence_transformers": None}):
-            with pytest.raises(EmbeddingError, match="sentence-transformers not installed"):
-                _ = model.model
+        with (
+            patch.dict("sys.modules", {"sentence_transformers": None}),
+            pytest.raises(EmbeddingError, match="sentence-transformers not installed"),
+        ):
+            _ = model.model
 
 
 class TestEmbeddingSingle:
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_embed_single(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_embed_single(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         """Single text embedding returns EmbeddingResult."""
         mock_instance = MagicMock()
         import numpy as np
@@ -123,9 +125,7 @@ class TestEmbeddingSingle:
         assert result.model == "BAAI/bge-m3"
 
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_embed_with_empty_string(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_embed_with_empty_string(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         """Should handle empty input."""
         mock_instance = MagicMock()
         import numpy as np
@@ -140,16 +140,12 @@ class TestEmbeddingSingle:
 
 class TestEmbeddingBatch:
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_embed_batch(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_embed_batch(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         """Batch embedding returns correct number of results."""
         mock_instance = MagicMock()
         import numpy as np
 
-        mock_instance.encode.return_value = np.array(
-            [[0.1] * 1024, [0.2] * 1024, [0.3] * 1024]
-        )
+        mock_instance.encode.return_value = np.array([[0.1] * 1024, [0.2] * 1024, [0.3] * 1024])
         mock_instance.get_sentence_embedding_dimension.return_value = 1024
         mock_st.return_value = mock_instance
 
@@ -160,9 +156,7 @@ class TestEmbeddingBatch:
         assert results[2].index == 2
 
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_empty_batch(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_empty_batch(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         """Empty batch returns empty list."""
         results = await model.embed_batch([])
         assert results == []
@@ -170,9 +164,7 @@ class TestEmbeddingBatch:
 
 class TestEncodeQueriesDocuments:
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_encode_queries(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_encode_queries(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         mock_instance = MagicMock()
         import numpy as np
 
@@ -186,9 +178,7 @@ class TestEncodeQueriesDocuments:
         assert len(vectors[0]) == 1024
 
     @patch("sentence_transformers.SentenceTransformer")
-    async def test_encode_documents(
-        self, mock_st: MagicMock, model: EmbeddingModel
-    ) -> None:
+    async def test_encode_documents(self, mock_st: MagicMock, model: EmbeddingModel) -> None:
         mock_instance = MagicMock()
         import numpy as np
 

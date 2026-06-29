@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import mimetypes
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -152,7 +151,7 @@ class PdfParser(BaseParser):
         docs: list[Document] = []
         path = Path(file_path)
 
-        with pymupdf.open(file_path) as pdf:
+        with pymupdf.open(file_path) as pdf:  # type: ignore[no-untyped-call]
             for page_num, page in enumerate(pdf, start=1):
                 text = page.get_text().strip()
                 if not text:
@@ -230,9 +229,7 @@ class XlsxParser(BaseParser):
     """Parser for Excel (.xlsx) documents using openpyxl."""
 
     supported_extensions = {".xlsx"}
-    supported_mime_types = {
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    }
+    supported_mime_types = {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 
     def parse(self, file_path: str, **kwargs: Any) -> list[Document]:
         self.validate_path(file_path)
