@@ -1,0 +1,91 @@
+# ===================================================================
+# FDE AI Platform — Development Environment
+# ===================================================================
+# Usage:
+#   make dev          # Start all services
+#   make dev-down     # Stop all services
+#   docker compose -f docker-compose.dev.yml up -d postgres redis
+# ===================================================================
+
+version: "3.9"
+
+services:
+  # ── PostgreSQL (metadata, audit logs, permissions) ─────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: fde-postgres-dev
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fde}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fde_dev_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-fde_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./shared/models/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fde} -d ${POSTGRES_DB:-fde_platform}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis (cache, message queue, session store) ─────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fde-redis-dev
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Qdrant (vector database) ────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    container_name: fde-qdrant-dev
+    ports:
+      - "${QDRANT_REST_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── MinIO (object storage — documents, embeddings cache) ────────
+  minio:
+    image: minio/minio:latest
+    container_name: fde-minio-dev
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-fde_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-fde_minio_2026}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_storage:
+  minio_data:
