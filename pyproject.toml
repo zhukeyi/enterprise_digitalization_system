@@ -40,7 +40,7 @@ router = [
 
 # ── RAG Agent ─────────────────────────────────────────────────────
 rag = [
-    "qdrant-client>=1.11.0",
+    "qdrant-client>=1.11.0,<1.14",  # Pinned: server runs Qdrant v1.13.2
     "sentence-transformers>=3.1.0",
     "torch>=2.3.0",
     "langchain>=0.3.0",
