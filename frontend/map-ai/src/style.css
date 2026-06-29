@@ -1,0 +1,217 @@
+/* FDE Map AI — 蓝白金主色调 */
+:root {
+  --fde-primary: #1a73e8;
+  --fde-primary-light: #4a9af5;
+  --fde-accent: #d4a843;
+  --fde-accent-light: #f0d68a;
+  --fde-bg: #f5f7fa;
+  --fde-surface: #ffffff;
+  --fde-text: #2d3748;
+  --fde-text-light: #718096;
+  --fde-border: #e2e8f0;
+  --fde-shadow: rgba(26, 115, 232, 0.08) 0 4px 12px;
+  --fde-radius: 8px;
+
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--fde-text);
+  background: var(--fde-bg);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body { min-height: 100vh; }
+
+#app {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  grid-template-rows: 56px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Header */
+.app-header {
+  grid-column: 1 / -1;
+  background: var(--fde-surface);
+  border-bottom: 1px solid var(--fde-border);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-header .logo {
+  color: var(--fde-primary);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.5px;
+}
+
+.app-header .logo .accent {
+  color: var(--fde-accent);
+}
+
+/* Map Area */
+.map-area {
+  position: relative;
+  overflow: hidden;
+}
+
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Map overlay controls */
+.map-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+}
+
+.map-overlay button {
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-border);
+  border-radius: var(--fde-radius);
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--fde-text);
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.map-overlay button:hover {
+  background: var(--fde-primary);
+  color: white;
+  border-color: var(--fde-primary);
+}
+
+/* Side Panel */
+.side-panel {
+  background: var(--fde-surface);
+  border-left: 1px solid var(--fde-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Agent Chat */
+.chat-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--fde-border);
+}
+
+.chat-header {
+  padding: 12px 16px;
+  background: var(--fde-primary);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.chat-input-area {
+  padding: 12px 16px;
+  border-top: 1px solid var(--fde-border);
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-area textarea {
+  flex: 1;
+  border: 1px solid var(--fde-border);
+  border-radius: var(--fde-radius);
+  padding: 8px 12px;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+  background: var(--fde-bg);
+}
+
+.chat-input-area textarea:focus {
+  border-color: var(--fde-primary);
+}
+
+.chat-input-area button {
+  background: var(--fde-primary);
+  color: white;
+  border: none;
+  border-radius: var(--fde-radius);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+/* Editor Section */
+.editor-section {
+  height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-header {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--fde-text-light);
+  font-weight: 600;
+  border-bottom: 1px solid var(--fde-border);
+}
+
+.editor-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+/* Message bubbles */
+.message {
+  margin-bottom: 12px;
+}
+
+.message.user {
+  text-align: right;
+}
+
+.message .bubble {
+  display: inline-block;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--fde-radius);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.message.user .bubble {
+  background: var(--fde-primary);
+  color: white;
+}
+
+.message.agent .bubble {
+  background: var(--fde-bg);
+  border: 1px solid var(--fde-border);
+  color: var(--fde-text);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px 50vh 1fr;
+  }
+  .side-panel {
+    border-left: none;
+    border-top: 1px solid var(--fde-border);
+  }
+}
+
+/* MapboxGL overrides */
+.mapboxgl-map { font-family: inherit; }
+.mapboxgl-ctrl-logo { display: none !important; }
