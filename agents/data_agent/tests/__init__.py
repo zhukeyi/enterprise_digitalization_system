@@ -1,0 +1,1 @@
+# (no content necessary — pytest uses conftest.py for configuration)
