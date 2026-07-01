@@ -90,14 +90,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)  # type: ignore[no-any-return]
 
     def _is_public_path(self, path: str) -> bool:
-        """Check if the path is in the public whitelist."""
+        """Check if the path is in the public whitelist.
+
+        Matching rules:
+        - Exact match: ``normalized == pp`` (e.g., ``/auth`` matches ``/auth``)
+        - Prefix segment match: ``normalized.startswith(pp + "/")``
+          (e.g., ``/auth`` matches ``/auth/login`` but NOT ``/authxxx``)
+        """
         # Normalize trailing slash
         normalized = path.rstrip("/") if path != "/" else path
 
         for public_path in self.public_paths:
             pp = public_path.rstrip("/")
-            # Exact match or prefix match (e.g., /auth matches /auth/login)
-            if normalized == pp or normalized.startswith(pp + "/") or normalized.startswith(pp):
+            # Exact match or prefix segment match only.
+            # Do NOT use bare startswith(pp) — it would let /auth match
+            # /authxxx / /authentication and bypass auth on unrelated routes.
+            if normalized == pp or normalized.startswith(pp + "/"):
                 return True
 
         return False

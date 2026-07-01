@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from agents.orchestrator.tools.registry import ToolRegistry
 from agents.rag_agent.integration import (
+    _rag_answer_handler,
     _rag_ingest_handler,
     _rag_search_handler,
     _reset_vector_store,
@@ -22,16 +23,17 @@ class TestRAGIntegration:
         _reset_vector_store()
 
     def test_register_rag_tools(self) -> None:
-        """Register RAG tools should add rag_search and rag_ingest."""
+        """Register RAG tools should add rag_search, rag_ingest, and rag_answer."""
         registry = ToolRegistry()
         register_rag_tools(registry)
 
         rag_tools = registry.get_tools_for_worker("rag")
-        assert len(rag_tools) == 2
+        assert len(rag_tools) == 3
 
         names = [t.name for t in rag_tools]
         assert "rag_search" in names
         assert "rag_ingest" in names
+        assert "rag_answer" in names
 
     def test_rag_search_tool_metadata(self) -> None:
         """rag_search tool should have proper metadata."""
@@ -136,7 +138,7 @@ class TestRAGIntegration:
 
         lc_tools = registry.as_langchain_tools()
         rag_lc = [t for t in lc_tools if t["name"].startswith("rag_")]
-        assert len(rag_lc) >= 2
+        assert len(rag_lc) >= 3
 
     def test_rag_tools_in_graph(self) -> None:
         """RAG tools should integrate with orchestrator graph."""
@@ -149,7 +151,7 @@ class TestRAGIntegration:
         assert graph is not None
 
         # Verify RAG tools are available in the registry
-        assert len(registry.get_tools_for_worker("rag")) == 2
+        assert len(registry.get_tools_for_worker("rag")) == 3
 
     def test_register_rag_tools_with_auth(self) -> None:
         """register_rag_tools_with_auth should register permission-filtered tools."""
@@ -174,10 +176,92 @@ class TestRAGIntegration:
                 )
 
                 tools = registry.get_tools_for_worker("rag")
-                assert len(tools) == 2
+                assert len(tools) == 3
                 assert tools[0].name == "rag_search"
                 assert tools[1].name == "rag_ingest"
+                assert tools[2].name == "rag_answer"
             finally:
                 await engine.dispose()
 
         asyncio.run(_test_register())
+
+
+class TestRagAnswerHandler:
+    """Tests for the rag_answer zero-hallucination synthesis handler."""
+
+    def test_rag_answer_with_provided_context(self) -> None:
+        """rag_answer should synthesize from provided context_chunks."""
+        chunks = [
+            {
+                "content": "FastAPI is a modern Python web framework for building APIs.",
+                "score": 0.92,
+                "source": "tech_doc.pdf",
+                "chunk_id": "chunk-1",
+            },
+            {
+                "content": "FastAPI supports async endpoints and automatic OpenAPI docs.",
+                "score": 0.78,
+                "source": "tech_doc.pdf",
+                "chunk_id": "chunk-2",
+            },
+        ]
+
+        result = asyncio.run(_rag_answer_handler(query="What is FastAPI?", context_chunks=chunks))
+        assert "answer" in result
+        assert "FastAPI" in result["answer"]
+        assert result["confidence"] == 0.92
+        assert result["total_sources"] == 2
+        assert len(result["sources"]) == 2
+        assert result["sources"][0]["source"] == "tech_doc.pdf"
+
+    def test_rag_answer_empty_results(self) -> None:
+        """rag_answer with no chunks should return 'not found' message."""
+        result = asyncio.run(_rag_answer_handler(query="unknown topic", context_chunks=[]))
+        assert "未找到相关文档" in result["answer"]
+        assert result["confidence"] == 0.0
+        assert result["total_sources"] == 0
+        assert result["sources"] == []
+
+    def test_rag_answer_low_confidence(self) -> None:
+        """rag_answer with score < 0.3 should emit low-confidence warning."""
+        chunks = [
+            {
+                "content": "Some barely relevant content.",
+                "score": 0.15,
+                "source": "low_relevance.pdf",
+                "chunk_id": "chunk-x",
+            },
+        ]
+
+        result = asyncio.run(_rag_answer_handler(query="obscure query", context_chunks=chunks))
+        assert "置信度较低" in result["answer"]
+        assert result["confidence"] == 0.15
+
+    def test_rag_answer_high_confidence(self) -> None:
+        """rag_answer with high score should not include low-confidence warning."""
+        chunks = [
+            {
+                "content": "Directly relevant answer content.",
+                "score": 0.95,
+                "source": "authoritative.pdf",
+                "chunk_id": "chunk-hi",
+            },
+        ]
+
+        result = asyncio.run(_rag_answer_handler(query="relevant query", context_chunks=chunks))
+        assert "置信度较低" not in result["answer"]
+        assert "根据知识库文档" in result["answer"]
+        assert result["confidence"] == 0.95
+
+    def test_rag_answer_tool_registered(self) -> None:
+        """rag_answer tool should have proper metadata in registry."""
+        registry = ToolRegistry()
+        register_rag_tools(registry)
+
+        tool = registry.get("rag_answer")
+        assert tool is not None
+        assert tool.worker == "rag"
+        assert tool.category == "retrieval"
+        assert "query" in tool.parameters
+        assert tool.parameters["query"]["required"] is True
+        assert "context_chunks" in tool.parameters

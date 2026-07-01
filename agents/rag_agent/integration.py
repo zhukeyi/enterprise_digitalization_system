@@ -6,7 +6,7 @@ Supervisor-Worker framework via ToolRegistry.
 Registered tools:
 - rag_search: Hybrid search (BM25 + vector + RRF fusion)
 - rag_ingest: Ingest documents into vector store
-- rag_answer: Generate answer from retrieved context (future)
+- rag_answer: Generate grounded answer from retrieved context (zero hallucination)
 
 M1-T4: RAGFlow migration to LangGraph
 """
@@ -89,6 +89,101 @@ async def _rag_search_handler(query: str, top_k: int = 5) -> dict[str, Any]:
     except (RuntimeError, ValueError, TypeError, ConnectionError, TimeoutError, OSError) as e:
         logger.error("rag_search failed: %s", e)
         return {"error": str(e), "query": query}
+
+
+# ══════════════════════════════════════════════════════════════════
+# RAG Answer Handler (Zero-Hallucination LLM Synthesis)
+# ══════════════════════════════════════════════════════════════════
+
+
+# Confidence threshold below which a low-confidence warning is emitted
+_LOW_CONFIDENCE_THRESHOLD = 0.3
+
+
+async def _rag_answer_handler(
+    query: str,
+    top_k: int = 5,
+    context_chunks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Generate a grounded answer from retrieved context (zero hallucination).
+
+    Uses a deterministic extractive summarizer in dev mode:
+    - Takes the top-scoring chunk as the primary answer
+    - Lists all sources with their relevance scores
+    - If top score < 0.3, emits a low-confidence warning
+    - Never fabricates information outside the provided context
+
+    In production, this would call an LLM with a grounding prompt that
+    instructs the model to only use provided context and cite sources.
+
+    Args:
+        query: User's question.
+        top_k: Number of chunks to retrieve (ignored if context_chunks given).
+        context_chunks: Pre-retrieved chunks to synthesize from. If None,
+            rag_search is called automatically.
+
+    Returns:
+        Dictionary with answer, sources, query, confidence, total_sources.
+    """
+    # Step 1: Get context chunks (from caller or via search)
+    if context_chunks is None:
+        search_result = await _rag_search_handler(query=query, top_k=top_k)
+        if "error" in search_result:
+            return {
+                "answer": "检索失败，无法生成答案。",
+                "sources": [],
+                "query": query,
+                "confidence": 0.0,
+                "total_sources": 0,
+                "error": search_result["error"],
+            }
+        context_chunks = search_result.get("results", [])
+
+    # Step 2: Handle empty results
+    if not context_chunks:
+        return {
+            "answer": "未找到相关文档，无法生成答案。",
+            "sources": [],
+            "query": query,
+            "confidence": 0.0,
+            "total_sources": 0,
+        }
+
+    # Step 3: Extractive summarization (deterministic, no LLM needed)
+    top_chunk = context_chunks[0]
+    top_score = float(top_chunk.get("score", 0.0))
+    confidence = min(top_score, 1.0)
+
+    # Primary answer: top-scoring chunk content
+    primary_content = str(top_chunk.get("content", ""))[:500]
+
+    # Build sources list
+    sources = [
+        {
+            "content_preview": str(c.get("content", ""))[:200],
+            "score": c.get("score", 0.0),
+            "source": c.get("source", "unknown"),
+            "chunk_id": c.get("chunk_id", ""),
+        }
+        for c in context_chunks
+    ]
+
+    # Step 4: Generate answer with confidence assessment
+    if confidence < _LOW_CONFIDENCE_THRESHOLD:
+        answer = (
+            f"基于检索到的文档，置信度较低（{confidence:.2f}）。"
+            f"最相关的内容为：{primary_content}"
+        )
+    else:
+        answer = f"根据知识库文档，{primary_content}"
+
+    return {
+        "answer": answer,
+        "sources": sources,
+        "query": query,
+        "confidence": round(confidence, 4),
+        "total_sources": len(sources),
+    }
 
 
 def _rag_ingest_handler(
@@ -212,6 +307,34 @@ def register_rag_tools(registry: ToolRegistry) -> None:
                     "required": False,
                     "default": "fde_knowledge",
                     "description": "Target collection name",
+                },
+            },
+            category="retrieval",
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="rag_answer",
+            description="Search knowledge base and generate a grounded answer with citations (zero hallucination)",
+            worker="rag",
+            handler=_rag_answer_handler,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "required": True,
+                    "description": "User's question",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 5,
+                    "description": "Number of chunks to retrieve",
+                },
+                "context_chunks": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Pre-retrieved chunks to synthesize from (skips search if provided)",
                 },
             },
             category="retrieval",
@@ -346,6 +469,34 @@ def register_rag_tools_with_auth(
                     "required": False,
                     "default": "fde_knowledge",
                     "description": "Target collection name",
+                },
+            },
+            category="retrieval",
+        )
+    )
+
+    registry.register(
+        ToolDefinition(
+            name="rag_answer",
+            description="Search knowledge base and generate a grounded answer with citations (zero hallucination)",
+            worker="rag",
+            handler=_rag_answer_handler,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "required": True,
+                    "description": "User's question",
+                },
+                "top_k": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 5,
+                    "description": "Number of chunks to retrieve",
+                },
+                "context_chunks": {
+                    "type": "array",
+                    "required": False,
+                    "description": "Pre-retrieved chunks to synthesize from (skips search if provided)",
                 },
             },
             category="retrieval",
