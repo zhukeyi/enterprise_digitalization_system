@@ -112,9 +112,15 @@ dev = [
     "types-redis>=4.6.0",
 ]
 
+# ── Evaluation (Ragas + Promptfoo) ────────────────────────────────
+eval = [
+    "ragas>=0.2.0",
+    "datasets>=2.20.0",    # HuggingFace datasets (Ragas dependency)
+]
+
 # ── All extras (except heavy RAG deps) ─────────────────────────────
 all = [
-    "fde-ai-platform[router,governance,observability,analysis,data]",
+    "fde-ai-platform[router,governance,observability,analysis,data,eval]",
 ]
 
 [tool.setuptools.packages.find]
@@ -215,6 +221,8 @@ module = [
     "langgraph.*",
     "langchain_core.*",
     "langsmith.*",
+    "ragas.*",
+    "datasets",
 ]
 ignore_missing_imports = true
 

@@ -1,0 +1,83 @@
+# ===================================================================
+# Promptfoo evaluation config — FDE AI Platform
+# ===================================================================
+# Targets the Router Agent OpenAI-compatible endpoint.
+# Run with: npx promptfoo eval --config tests/promptfoo/promptfoo.yaml
+# ===================================================================
+
+description: "FDE AI Platform — Basic LLM Evaluation"
+
+providers:
+  - id: "openai:chat:gpt-3.5-turbo"
+    config:
+      apiBaseUrl: "http://localhost:8080/v1"
+      apiKey: "not-needed"
+      temperature: 0
+      max_tokens: 1024
+
+prompts:
+  - id: basic-qa
+    raw: "{{query}}"
+
+tests:
+  # ── Knowledge retrieval tests ─────────────────────────────────
+  - vars:
+      query: "公司年假政策是什么？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "icontains"
+        value: "年假"
+      - type: "icontains"
+        value: "天"
+
+  - vars:
+      query: "如何申请加班补贴？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "icontains"
+        value: "加班"
+
+  - vars:
+      query: "新员工入职需要准备哪些材料？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "icontains"
+        value: "入职"
+
+  # ── Multi-document synthesis tests ────────────────────────────
+  - vars:
+      query: "公司的绩效考核制度是怎样的？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "icontains"
+        value: "考核"
+
+  - vars:
+      query: "出差报销的标准和流程是什么？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "icontains"
+        value: "报销"
+
+  # ── Unanswerable question tests ────────────────────────────────
+  - vars:
+      query: "公司2019年的营收是多少？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      # Should indicate inability to answer
+      - type: "llm-rubric"
+        value: "The response should indicate it cannot answer this question or does not have the information."
+
+  - vars:
+      query: "公司食堂的菜单是什么？"
+    assert:
+      - type: "not-equals"
+        value: ""
+      - type: "llm-rubric"
+        value: "The response should indicate it cannot provide the specific menu information."

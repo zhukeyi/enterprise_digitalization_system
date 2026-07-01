@@ -4,7 +4,7 @@
 
 FDE AI Platform 是企业级 AI 数字化平台，可私有化部署。
 技术栈：Python 3.11+ / FastAPI / LangGraph / Qdrant / Vue 3。
-当前阶段：M1-M2 完成（核心骨架 + 触点集成 + 智能体编排），M3 待启动。
+当前阶段：M1-M2 完成（核心骨架 + 触点集成 + 智能体编排），M3 进行中（T7 评测体系已完成）。
 
 ## 构建与测试
 
@@ -21,6 +21,7 @@ make verify           # 完整静态检查门禁 (format-check + lint + typechec
 make docker-up        # 启动开发服务 (PostgreSQL / Redis / Qdrant / MinIO)
 make docker-down      # 停止开发服务
 make pre-commit       # 运行所有 pre-commit hooks
+make eval             # 运行评测套件 (Ragas + Promptfoo, 需安装 eval extras)
 ```
 
 ## 目录结构
@@ -55,7 +56,13 @@ enterprise_digitalization_system/
 │   │   ├── auth/dependencies.py   #   get_current_user / require_role / check_permission
 │   │   ├── auth/router.py         #   FastAPI Auth API (/auth/*)
 │   │   ├── middleware/__init__.py #   AuthMiddleware (JWT stateless + 路由白名单)
-│   │   └── decision_log.py        #   决策链日志服务（plan→worker→final 全链追踪）
+│   │   ├── decision_log.py        #   决策链日志服务（plan→worker→final 全链追踪）
+│   │   └── eval/                  #   评测体系（M3-T7 ✅）
+│   │       ├── golden_dataset.py  #     Golden Dataset 管理（JSONL 加载/保存/合并/校验）
+│   │       ├── ragas_eval.py      #     Ragas RAG 评测（faithfulness/relevancy/precision/recall）
+│   │       ├── promptfoo_runner.py#     Promptfoo CI 门禁（subprocess 调用 npx promptfoo）
+│   │       ├── report.py          #     评测报告生成（Markdown + JSON）
+│   │       └── cli.py             #     CLI 入口 (python -m agents.governance_agent.eval.cli)
 │   ├── compliance_agent/          # 合规审核 Agent
 │   │   ├── integration.py         #   3 工具：audit_log_query / compliance_summary / risk_check
 │   │   └── tests/                 #   11 个测试
@@ -101,6 +108,12 @@ enterprise_digitalization_system/
 │       └── registry.py            #     get_prompt / register_prompt / list_prompts
 ├── frontend/map-ai/               # Vue 3 + Vite 前端（MapAI 看板 + AI 对话）
 ├── tests/                         # 顶层集成测试 + E2E 测试
+│   ├── golden_datasets/            #   评测数据集 (JSONL 格式)
+│   │   └── rag_basic.jsonl        #     RAG 基础评测集 (10 条样本)
+│   ├── promptfoo/                  #   Promptfoo 配置
+│   │   ├── promptfoo.yaml         #     基础评测配置
+│   │   └── rag_assertions.yaml    #     RAG 断言规则
+│   └── test_eval.py               #   评测体系单元测试 (28 tests)
 ├── docs/                          # 架构审计报告 + Code Review 记录
 ├── pyproject.toml                 # 项目配置 + 可选依赖分组
 ├── docker-compose.dev.yml         # 开发环境服务 (PG/Redis/Qdrant/MinIO)

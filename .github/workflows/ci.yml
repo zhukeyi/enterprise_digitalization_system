@@ -132,6 +132,36 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+  # ── Evaluation Suite ─────────────────────────────────────────────
+  eval:
+    name: Evaluation Suite
+    runs-on: ubuntu-latest
+    needs: [test]
+    continue-on-error: true    # Non-blocking gate — report only
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies (with eval extras)
+        run: uv pip install --system -e ".[dev,eval]"
+
+      - name: Run evaluation suite
+        run: python -m agents.governance_agent.eval.cli --skip-promptfoo
+        env:
+          FDE_EVAL_LLM_BASE_URL: "http://localhost:8080/v1"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval_reports/
+          retention-days: 14
+
   # ── Summary ──────────────────────────────────────────────────────
   ci-pass:
     name: CI Gate
