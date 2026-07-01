@@ -8,6 +8,7 @@ The state flows through the Supervisor-Worker graph:
   metadata: trace info, timing, etc.
 
 M2-T6: Added conflict detection, resolution, and final response fields.
+M2-T8: Added merge_dict reducer for worker_outputs accumulation across steps.
 """
 
 from __future__ import annotations
@@ -17,6 +18,18 @@ from typing import Annotated, Any, Literal
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+
+def merge_dict(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    """Reducer that merges dict updates instead of replacing.
+
+    Used for worker_outputs so that each worker's return value
+    {worker_name: result} accumulates across multi-step plans.
+    """
+    merged = dict(left)
+    merged.update(right)
+    return merged
+
 
 # ══════════════════════════════════════════════════════════════════
 # Conflict Models (M2-T6)
@@ -87,7 +100,7 @@ class OrchestratorState(BaseModel):
 
     messages: Annotated[list[BaseMessage], add_messages] = Field(default_factory=list)
     next_worker: str = Field(default="", description="Next worker to dispatch to")
-    worker_outputs: dict[str, Any] = Field(
+    worker_outputs: Annotated[dict[str, Any], merge_dict] = Field(
         default_factory=dict, description="Worker execution results"
     )
     plan: SupervisorPlan | None = Field(default=None, description="Current supervisor plan")

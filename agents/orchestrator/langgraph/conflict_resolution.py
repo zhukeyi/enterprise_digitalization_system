@@ -266,7 +266,10 @@ class ConflictDetector:
         """
         for key in ("total_results", "count", "total_matched"):
             if key in output:
-                return output[key]
+                val = output[key]
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    return val
+                return None
         return None
 
 
@@ -693,7 +696,7 @@ class ResponseGenerator:
         for extensibility and correctness.
         """
         if not outputs:
-            return "未能获取到有效结果，请稍后重试。"
+            return "请求处理完成，当前无需调用智能体。如有进一步问题请继续提问。"
 
         statuses: list[str] = []
         for output in outputs.values():

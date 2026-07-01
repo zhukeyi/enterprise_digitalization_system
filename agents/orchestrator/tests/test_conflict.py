@@ -354,7 +354,7 @@ class TestResponseGenerator:
         state = _make_state({})
         result = gen(state)
         assert result["final_response"] != ""
-        assert "未能获取" in result["final_response"]
+        assert "无需调用智能体" in result["final_response"]
 
     def test_response_with_healthy_statuses(self) -> None:
         """All healthy statuses should produce positive verdict."""

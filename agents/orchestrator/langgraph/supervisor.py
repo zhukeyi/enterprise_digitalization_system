@@ -230,16 +230,27 @@ class SupervisorNode:
         """Generate a mock plan for development/testing without LLM.
 
         Uses simple heuristics to route requests.
-        If worker_outputs already exist, finishes the conversation.
+        If worker_outputs already exist, check for remaining plan steps before finishing.
         """
-        # If workers have already produced results, finish the conversation
+        # If workers have already produced results, check if plan has more steps
         if state.worker_outputs:
+            remaining = self._remaining_steps(state)
+            if remaining:
+                next_step = remaining[0]
+                return SupervisorPlan(
+                    steps=remaining,
+                    reasoning=f"Continuing to next step: {next_step.worker}/{next_step.task[:50]}",
+                    requires_rag=next_step.worker == "rag",
+                    complexity="medium",
+                    finish=False,
+                )
+
             results_summary = ", ".join(
                 f"{k}: {str(v)[:50]}" for k, v in state.worker_outputs.items()
             )
             return SupervisorPlan(
                 steps=[],
-                reasoning=f"Workers completed: {results_summary}",
+                reasoning=f"All steps completed. Workers: {results_summary}",
                 requires_rag="rag" in state.worker_outputs,
                 complexity="medium",
                 finish=True,
@@ -260,69 +271,145 @@ class SupervisorNode:
         # Simple keyword-based routing heuristics
         query_lower = last_user_msg.lower()
 
+        steps: list[PlanStep] = []
+        matched_workers: set[str] = set()
+
         # Check for RAG-related queries
         rag_keywords = ["知识库", "文档", "检索", "搜索", "查找", "knowledge", "search", "document"]
         if any(kw in query_lower for kw in rag_keywords):
-            return SupervisorPlan(
-                steps=[
-                    PlanStep(
-                        worker="rag",
-                        task=f"Search knowledge base for: {last_user_msg[:100]}",
-                        tool="rag_search",
-                        tool_args={"query": last_user_msg},
-                    )
-                ],
-                reasoning="User request involves knowledge retrieval",
-                requires_rag=True,
-                complexity="medium",
-                finish=False,
+            steps.append(
+                PlanStep(
+                    worker="rag",
+                    task=f"Search knowledge base for: {last_user_msg[:100]}",
+                    tool="rag_search",
+                    tool_args={"query": last_user_msg},
+                )
             )
+            matched_workers.add("rag")
+
+        # Check for compliance-related queries
+        compliance_keywords = ["合规", "审计", "风险检查", "compliance", "audit", "regulatory"]
+        if any(kw in query_lower for kw in compliance_keywords):
+            steps.append(
+                PlanStep(
+                    worker="compliance",
+                    task=f"Compliance check for: {last_user_msg[:100]}",
+                    tool="compliance_summary",
+                )
+            )
+            matched_workers.add("compliance")
+
+        # Check for business system queries
+        business_keywords = [
+            "crm",
+            "erp",
+            "业务系统",
+            "客户",
+            "订单",
+            "inventory",
+            "invoice",
+            "business",
+        ]
+        if any(kw in query_lower for kw in business_keywords):
+            # Use system_status (no args needed) unless specific entity keywords are present
+            if any(kw in query_lower for kw in ["客户", "订单", "customer", "order"]):
+                steps.append(
+                    PlanStep(
+                        worker="business_system",
+                        task=f"Query business systems for: {last_user_msg[:100]}",
+                        tool="business_query",
+                        tool_args={"system": "crm", "entity": "customer"},
+                    )
+                )
+            else:
+                steps.append(
+                    PlanStep(
+                        worker="business_system",
+                        task=f"Check business system status for: {last_user_msg[:100]}",
+                        tool="system_status",
+                    )
+                )
+            matched_workers.add("business_system")
+
+        # Check for IM/messaging queries
+        im_keywords = ["通知", "消息", "发送", "广播", "notify", "message", "broadcast", "send"]
+        if any(kw in query_lower for kw in im_keywords):
+            steps.append(
+                PlanStep(
+                    worker="im",
+                    task=f"Send IM notification for: {last_user_msg[:100]}",
+                    tool="send_message",
+                    tool_args={
+                        "platform": "mock",
+                        "target_id": "default-group",
+                        "content": last_user_msg[:200],
+                    },
+                )
+            )
+            matched_workers.add("im")
 
         # Check for HR-related queries
-        hr_keywords = ["员工", "裁员", "绩效", "HR", "employee", "layoff", "performance"]
+        hr_keywords = ["员工", "裁员", "绩效", "hr", "employee", "layoff", "performance"]
         if any(kw in query_lower for kw in hr_keywords):
-            return SupervisorPlan(
-                steps=[
-                    PlanStep(
-                        worker="hr",
-                        task=f"HR analysis for: {last_user_msg[:100]}",
-                    )
-                ],
-                reasoning="User request involves HR analysis",
-                requires_rag=False,
-                complexity="medium",
-                finish=False,
+            steps.append(
+                PlanStep(
+                    worker="hr",
+                    task=f"HR analysis for: {last_user_msg[:100]}",
+                )
             )
+            matched_workers.add("hr")
 
         # Check for data-related queries
-        data_keywords = ["数据采集", "爬虫", "RSS", "scrape", "crawl", "feed"]
+        data_keywords = ["数据采集", "爬虫", "rss", "scrape", "crawl", "feed"]
         if any(kw in query_lower for kw in data_keywords):
-            return SupervisorPlan(
-                steps=[
-                    PlanStep(
-                        worker="data",
-                        task=f"Data collection for: {last_user_msg[:100]}",
-                    )
-                ],
-                reasoning="User request involves data collection",
-                requires_rag=False,
-                complexity="medium",
-                finish=False,
+            steps.append(
+                PlanStep(
+                    worker="data",
+                    task=f"Data collection for: {last_user_msg[:100]}",
+                )
             )
+            matched_workers.add("data")
 
-        # Check for analysis-related queries
+        # Check for analysis-related queries (only if no specific worker matched yet)
         analysis_keywords = ["分析", "报表", "统计", "chart", "analyze", "report"]
-        if any(kw in query_lower for kw in analysis_keywords):
+        if any(kw in query_lower for kw in analysis_keywords) and not matched_workers:
+            steps.append(
+                PlanStep(
+                    worker="analysis",
+                    task=f"Data analysis for: {last_user_msg[:100]}",
+                )
+            )
+            matched_workers.add("analysis")
+
+        # Check for governance/access-control queries
+        governance_keywords = ["权限", "用户管理", "rbac", "access control", "governance"]
+        if any(kw in query_lower for kw in governance_keywords):
+            steps.append(
+                PlanStep(
+                    worker="governance",
+                    task=f"Access control check for: {last_user_msg[:100]}",
+                )
+            )
+            matched_workers.add("governance")
+
+        # Check for map/spatial queries
+        map_keywords = ["地图", "空间", "地理", "区域", "map", "spatial", "geographic", "region"]
+        if any(kw in query_lower for kw in map_keywords):
+            steps.append(
+                PlanStep(
+                    worker="map",
+                    task=f"Spatial analysis for: {last_user_msg[:100]}",
+                )
+            )
+            matched_workers.add("map")
+
+        if steps:
+            complexity = "complex" if len(steps) >= 3 else "medium" if len(steps) == 2 else "simple"
             return SupervisorPlan(
-                steps=[
-                    PlanStep(
-                        worker="analysis",
-                        task=f"Data analysis for: {last_user_msg[:100]}",
-                    )
-                ],
-                reasoning="User request involves data analysis",
-                requires_rag=False,
-                complexity="medium",
+                steps=steps,
+                reasoning=f"Routed to {len(steps)} worker(s): {', '.join(matched_workers)}",
+                requires_rag="rag" in matched_workers,
+                complexity=complexity,
                 finish=False,
             )
 
@@ -368,3 +455,19 @@ class SupervisorNode:
         # Return the first step's worker (subsequent steps handled iteratively)
         first_step = plan.steps[0]
         return first_step.worker
+
+    def _remaining_steps(
+        self,
+        state: OrchestratorState,
+    ) -> list[PlanStep]:
+        """Find plan steps whose target worker has not yet produced output.
+
+        Args:
+            state: Current orchestrator state.
+
+        Returns:
+            List of PlanStep objects for workers that haven't run yet.
+        """
+        if state.plan is None:
+            return []
+        return [s for s in state.plan.steps if s.worker not in state.worker_outputs]
