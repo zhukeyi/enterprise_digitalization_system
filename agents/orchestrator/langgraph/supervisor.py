@@ -370,15 +370,51 @@ class SupervisorNode:
             )
             matched_workers.add("data")
 
-        # Check for analysis-related queries (only if no specific worker matched yet)
-        analysis_keywords = ["分析", "报表", "统计", "chart", "analyze", "report"]
+        # Check for analysis-related queries
+        analysis_keywords = [
+            "分析",
+            "报表",
+            "统计",
+            "chart",
+            "analyze",
+            "report",
+            "查询",
+            "sql",
+            "nl2sql",
+            "schema",
+            "表结构",
+            "数据库",
+            "图表",
+        ]
         if any(kw in query_lower for kw in analysis_keywords) and not matched_workers:
-            steps.append(
-                PlanStep(
-                    worker="analysis",
-                    task=f"Data analysis for: {last_user_msg[:100]}",
+            # Determine specific tool based on sub-keywords
+            if "schema" in query_lower or "表结构" in last_user_msg:
+                steps.append(
+                    PlanStep(
+                        worker="analysis",
+                        task=f"List database schema for: {last_user_msg[:100]}",
+                        tool="schema_list",
+                        tool_args={},
+                    )
                 )
-            )
+            elif "chart" in query_lower or "图表" in last_user_msg:
+                steps.append(
+                    PlanStep(
+                        worker="analysis",
+                        task=f"Generate chart data for: {last_user_msg[:100]}",
+                        tool="query_chart_data",
+                        tool_args={"query": last_user_msg, "chart_type": "bar"},
+                    )
+                )
+            else:
+                steps.append(
+                    PlanStep(
+                        worker="analysis",
+                        task=f"NL2SQL query for: {last_user_msg[:100]}",
+                        tool="nl2sql",
+                        tool_args={"query": last_user_msg},
+                    )
+                )
             matched_workers.add("analysis")
 
         # Check for governance/access-control queries

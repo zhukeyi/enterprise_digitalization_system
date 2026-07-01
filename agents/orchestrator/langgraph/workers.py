@@ -202,10 +202,67 @@ class HRWorker(BaseWorker):
     - Employee profiling
     - Risk assessment
     - Layoff simulation (with foolproof checks)
+    - Org health reporting
     """
 
     name = "hr"
     description = "HR analysis — employee profiling, risk assessment, layoff simulation"
+
+    def execute(self, step: Any, state: OrchestratorState) -> Any:
+        """Execute HR task with intelligent tool routing.
+
+        Supported tools:
+        - hr_employee_profile: Generate employee profile
+        - hr_person_job_match: Person-job matching
+        - hr_risk_assessment: Risk assessment
+        - hr_redundancy_analysis: Department redundancy
+        - hr_layoff_simulation: Layoff simulation (foolproof)
+        - hr_org_health: Org health report
+        """
+        # If a specific tool is specified, dispatch directly
+        if step.tool:
+            return self._run_dispatch(step.tool, **step.tool_args)
+
+        # Infer tool from task description
+        task_lower = step.task.lower()
+
+        if "profile" in task_lower or "画像" in step.task:
+            return self._run_dispatch(
+                "hr_employee_profile", employee_id=step.tool_args.get("employee_id", "EMP-001")
+            )
+
+        if "match" in task_lower or "匹配" in step.task:
+            return self._run_dispatch(
+                "hr_person_job_match",
+                employee_id=step.tool_args.get("employee_id", "EMP-001"),
+                position_id=step.tool_args.get("position_id", "POS-SSE-01"),
+            )
+
+        if "risk" in task_lower or "风险" in step.task:
+            return self._run_dispatch(
+                "hr_risk_assessment", employee_id=step.tool_args.get("employee_id", "EMP-001")
+            )
+
+        if "redundancy" in task_lower or "冗余" in step.task:
+            return self._run_dispatch(
+                "hr_redundancy_analysis",
+                department_id=step.tool_args.get("department_id", "dept-eng"),
+            )
+
+        if "layoff" in task_lower or "裁员" in step.task:
+            return self._run_dispatch(
+                "hr_layoff_simulation",
+                department_id=step.tool_args.get("department_id", "dept-eng"),
+                target_reduction=step.tool_args.get("target_reduction", 1),
+            )
+
+        if "health" in task_lower or "健康" in step.task:
+            return self._run_dispatch(
+                "hr_org_health", department_id=step.tool_args.get("department_id", "dept-eng")
+            )
+
+        # Default: try employee profile
+        return self._run_dispatch("hr_employee_profile", employee_id="EMP-001")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -235,13 +292,46 @@ class AnalysisWorker(BaseWorker):
     """Data analysis worker.
 
     Handles analytical tasks:
-    - NL2SQL conversion
-    - Statistical analysis
-    - Interactive chart generation
+    - NL2SQL conversion and execution
+    - SQL query execution (read-only, safety-checked)
+    - Schema metadata listing
+    - Chart-formatted data generation
     """
 
     name = "analysis"
     description = "Data analysis — NL2SQL, interactive charts, statistical reports"
+
+    def execute(self, step: Any, state: OrchestratorState) -> Any:
+        """Execute analysis task with intelligent tool routing.
+
+        Supported tools:
+        - nl2sql: Natural language to SQL conversion and execution
+        - sql_execute: Execute pre-validated SQL (read-only)
+        - schema_list: List database tables and columns
+        - query_chart_data: Query data and return chart format
+        """
+        # If a specific tool is specified, dispatch directly
+        if step.tool:
+            return self._run_dispatch(step.tool, **step.tool_args)
+
+        # Infer tool from task description
+        task_lower = step.task.lower()
+
+        if "schema" in task_lower or "表结构" in step.task:
+            return self._run_dispatch("schema_list")
+
+        if "chart" in task_lower or "图表" in step.task:
+            query = step.tool_args.get("query", step.task[:100])
+            chart_type = step.tool_args.get("chart_type", "bar")
+            return self._run_dispatch("query_chart_data", query=query, chart_type=chart_type)
+
+        if "sql" in task_lower and "nl2sql" not in task_lower:
+            sql = step.tool_args.get("sql", "SELECT 1")
+            return self._run_dispatch("sql_execute", sql=sql)
+
+        # Default: NL2SQL with the task description as query
+        query = step.tool_args.get("query", step.task)
+        return self._run_dispatch("nl2sql", query=query)
 
 
 # ══════════════════════════════════════════════════════════════════

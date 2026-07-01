@@ -171,9 +171,21 @@ def create_default_graph() -> CompiledStateGraph:  # type: ignore[type-arg]
     """Create a default orchestrator graph with mock supervisor.
 
     Uses mock heuristics (no LLM) for development and testing.
-    All workers are registered with their base implementations.
+    Registers analysis and HR tools to the ToolRegistry for worker dispatch.
     """
-    return build_orchestrator_graph()
+    registry = ToolRegistry()
+
+    # Register analysis tools (M3-T3)
+    from agents.analysis_agent.integration import register_analysis_tools
+
+    register_analysis_tools(registry)
+
+    # Register HR tools (M3-T5)
+    from agents.hr_agent.integration import register_hr_tools
+
+    register_hr_tools(registry)
+
+    return build_orchestrator_graph(tool_registry=registry)
 
 
 def create_graph_with_llm(llm: Any) -> CompiledStateGraph:  # type: ignore[type-arg]
