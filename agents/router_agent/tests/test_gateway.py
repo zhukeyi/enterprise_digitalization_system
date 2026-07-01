@@ -159,8 +159,8 @@ class TestChatCompletionsEndpoint:
         resp = await client.post("/v1/chat/completions", json=payload)
         assert resp.status_code == 400
 
-    async def test_anti_foolproof_blocks_chinese_HR_keywords(self, client: AsyncClient) -> None:
-        """防呆机制应拦截 HR 相关危险操作（裁掉/解雇/开除）."""
+    async def test_anti_foolproof_blocks_chinese_hr_keywords(self, client: AsyncClient) -> None:
+        """Anti-foolproof should block Chinese HR keywords."""
         for word in ["裁掉", "解雇", "开除"]:
             payload = {
                 "messages": [{"role": "user", "content": f"请{word}张三"}],
@@ -169,7 +169,7 @@ class TestChatCompletionsEndpoint:
             assert resp.status_code == 400, f"Keyword '{word}' not blocked"
 
     async def test_anti_foolproof_chinese_bypass(self, client: AsyncClient) -> None:
-        """带确认头时，中文关键词也应被放行."""
+        """With confirmation header, Chinese keywords should pass."""
         payload = {
             "messages": [{"role": "user", "content": "确认删除所有过期记录"}],
         }

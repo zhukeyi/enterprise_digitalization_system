@@ -100,9 +100,13 @@ class FallbackChain:
                 logger.warning("trace=%s adapter_error adapter=%s: %s", trace_id, attempt_name, e)
 
             except NotImplementedError:
-                error_msg = "adapter not yet implemented (no API key)"
+                error_msg = "adapter not yet implemented (no API key or stub implementation)"
                 errors.append(f"{attempt_name}: {error_msg}")
-                logger.info("trace=%s not_implemented adapter=%s", trace_id, attempt_name)
+                logger.warning(
+                    "trace=%s not_implemented adapter=%s — stub has no complete() implementation",
+                    trace_id,
+                    attempt_name,
+                )
 
             except Exception as e:
                 error_msg = f"{type(e).__name__}: {e}"

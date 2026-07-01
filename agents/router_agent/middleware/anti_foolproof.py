@@ -20,7 +20,7 @@ from typing import Any, ClassVar
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 
@@ -80,7 +80,7 @@ class FoolproofMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.config = config or FoolproofConfig()
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> JSONResponse:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip non-write operations and excluded paths
         if not self.config.enabled:
             return await call_next(request)  # type: ignore[return-value]

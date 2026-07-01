@@ -6,6 +6,10 @@ M1-T10: Multiple chunking strategies:
 - RecursiveChunker: Hierarchical separator-based splitting
 
 All strategies support configurable chunk size, overlap, and token counting.
+
+Document model: Reuses document_parser.Document (Pydantic BaseModel) to avoid
+the dual-model problem. A lightweight adapter converts ParsedDocument fields
+to the chunker's expected interface.
 """
 
 from __future__ import annotations
@@ -13,6 +17,8 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from typing import Any
+
+from agents.rag_agent.document_parser import Document
 
 logger = logging.getLogger("fde.rag.chunking")
 
@@ -47,24 +53,17 @@ class Chunk:
         self.page_number = page_number
 
 
-class Document:
-    """Lightweight document model for chunker input."""
-
-    def __init__(
-        self,
-        id: str = "",
-        content: str = "",
-        metadata: dict[str, Any] | None = None,
-        source: str = "",
-        mime_type: str = "text/plain",
-        page_number: int | None = None,
-    ) -> None:
-        self.id = id
-        self.content = content
-        self.metadata = metadata or {}
-        self.source = source
-        self.mime_type = mime_type
-        self.page_number = page_number
+# Re-export Document so chunking consumers don't need to import from document_parser
+__all__ = [
+    "BaseChunker",
+    "Chunk",
+    "ChunkerFactory",
+    "Document",
+    "FixedSizeChunker",
+    "RecursiveChunker",
+    "SemanticChunker",
+    "chunk_documents",
+]
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -273,9 +273,7 @@ class VectorStore:
             collection_name=cfg.name,
             vectors_config=qmodels.VectorParams(
                 size=cfg.vector_size,
-                distance=qmodels.Distance[
-                    cfg.distance.upper()
-                ],
+                distance=qmodels.Distance[cfg.distance.upper()],
                 hnsw_config=qmodels.HnswConfigDiff(**cfg.hnsw_config),
             ),
             optimizers_config=qmodels.OptimizersConfigDiff(**cfg.optimizers_config),
@@ -305,9 +303,7 @@ class VectorStore:
             collection_name=cfg.name,
             vectors_config=qmodels.VectorParams(
                 size=cfg.vector_size,
-                distance=qmodels.Distance[
-                    cfg.distance.upper()
-                ],
+                distance=qmodels.Distance[cfg.distance.upper()],
                 hnsw_config=qmodels.HnswConfigDiff(**cfg.hnsw_config),
             ),
             optimizers_config=qmodels.OptimizersConfigDiff(**cfg.optimizers_config),

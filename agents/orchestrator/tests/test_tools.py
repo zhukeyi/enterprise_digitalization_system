@@ -158,7 +158,7 @@ class TestToolRegistry:
         assert len(retrieval_tools) == 1
         assert retrieval_tools[0].name == "search"
 
-    def test_dispatch_success(self) -> None:
+    async def test_dispatch_success(self) -> None:
         registry = ToolRegistry()
 
         def search_handler(query: str) -> str:
@@ -172,15 +172,15 @@ class TestToolRegistry:
         )
         registry.register(tool)
 
-        result = registry.dispatch("rag_search", query="test")
+        result = await registry.dispatch("rag_search", query="test")
         assert result == "Found: test"
 
-    def test_dispatch_nonexistent_raises(self) -> None:
+    async def test_dispatch_nonexistent_raises(self) -> None:
         registry = ToolRegistry()
         with pytest.raises(KeyError, match="not found"):
-            registry.dispatch("nonexistent")
+            await registry.dispatch("nonexistent")
 
-    def test_dispatch_handler_error(self) -> None:
+    async def test_dispatch_handler_error(self) -> None:
         registry = ToolRegistry()
 
         def failing_handler(**kwargs: object) -> str:
@@ -195,7 +195,26 @@ class TestToolRegistry:
         registry.register(tool)
 
         with pytest.raises(ValueError, match="Handler failed"):
-            registry.dispatch("failing_tool")
+            await registry.dispatch("failing_tool")
+
+    async def test_dispatch_async_handler(self) -> None:
+        """dispatch() should auto-await async handlers and return the result."""
+
+        async def async_search_handler(query: str) -> str:
+            return f"Async result for: {query}"
+
+        registry = ToolRegistry()
+        registry.register(
+            ToolDefinition(
+                name="async_search",
+                description="Async search tool",
+                worker="rag",
+                handler=async_search_handler,
+            )
+        )
+
+        result = await registry.dispatch("async_search", query="test")
+        assert result == "Async result for: test"
 
     def test_as_langchain_tools(self) -> None:
         registry = ToolRegistry()

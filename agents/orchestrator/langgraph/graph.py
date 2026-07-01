@@ -1,13 +1,16 @@
 """Orchestrator Graph — LangGraph StateGraph with Supervisor-Worker pattern.
 
 Builds the complete multi-agent orchestration graph:
-  START → Supervisor → Worker(s) → Supervisor → ... → END
-
-The supervisor decides which worker to route to based on its plan.
-Workers execute and return results. The supervisor then evaluates
-and either routes to another worker or finishes.
+  START → Supervisor → Worker(s) → Supervisor → ...
+                                      ↓ (when finish)
+                               ConflictDetector
+                                      ↓
+                               ConflictResolver
+                                      ↓
+                               ResponseGenerator → END
 
 M1-T6: LangGraph graph construction
+M2-T6: Conflict detection, resolution, and response generation nodes
 """
 
 from __future__ import annotations
@@ -18,14 +21,23 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from agents.orchestrator.langgraph.conflict_resolution import (
+    ConflictDetector,
+    ConflictResolver,
+    ResponseGenerator,
+)
 from agents.orchestrator.langgraph.state import OrchestratorState
 from agents.orchestrator.langgraph.supervisor import SupervisorNode
 from agents.orchestrator.langgraph.workers import (
     AnalysisWorker,
     BaseWorker,
+    BusinessSystemWorker,
+    ComplianceWorker,
     DataWorker,
     GovernanceWorker,
     HRWorker,
+    IMWorker,
+    MapWorker,
     RAGWorker,
     RouterWorker,
 )
@@ -71,7 +83,16 @@ def build_orchestrator_graph(
         "analysis": AnalysisWorker(tool_registry),
         "router": RouterWorker(tool_registry),
         "governance": GovernanceWorker(tool_registry),
+        "compliance": ComplianceWorker(tool_registry),
+        "business_system": BusinessSystemWorker(tool_registry),
+        "im": IMWorker(tool_registry),
+        "map": MapWorker(tool_registry),
     }
+
+    # ── M2-T6: Conflict & Response nodes ──────────────────────────
+    conflict_detector = ConflictDetector()
+    conflict_resolver = ConflictResolver()
+    response_generator = ResponseGenerator()
 
     # ── Build StateGraph ────────────────────────────────────────────
     graph = StateGraph(OrchestratorState)
@@ -83,42 +104,57 @@ def build_orchestrator_graph(
     for worker_name, worker in workers.items():
         graph.add_node(worker_name, worker)
 
+    # Add M2-T6 nodes
+    graph.add_node("conflict_detector", conflict_detector)
+    graph.add_node("conflict_resolver", conflict_resolver)
+    graph.add_node("response_generator", response_generator)
+
     # ── Add edges ───────────────────────────────────────────────────
     # All workers return to supervisor after execution
     for worker_name in workers:
         graph.add_edge(worker_name, "supervisor")
 
-    # Supervisor routes to workers or END based on plan
+    # Supervisor routes to workers, or through conflict pipeline to END
     def route_from_supervisor(state: OrchestratorState) -> str:
         """Determine which node the supervisor routes to.
 
         Returns:
-            Worker name string or "__end__" to finish.
+            Worker name, "conflict_detector" (if finished), or END.
         """
         next_worker = state.next_worker
 
         if next_worker == "__end__" or next_worker == END:
-            return END
+            # Supervisor finished — run conflict detection before ending
+            return "conflict_detector"
 
         # Validate worker exists
         if next_worker in workers:
             return next_worker
 
         logger.warning("Supervisor routed to unknown worker '%s', ending", next_worker)
-        return END
+        return "conflict_detector"
 
-    # Conditional edge from supervisor to workers or END
+    # M2-T6: Conflict pipeline chain
+    graph.add_edge("conflict_detector", "conflict_resolver")
+    graph.add_edge("conflict_resolver", "response_generator")
+    graph.add_edge("response_generator", END)
+
+    # Conditional edge from supervisor to workers or conflict_detector
+    route_targets: dict[str, str] = {w: w for w in workers}
+    route_targets["conflict_detector"] = "conflict_detector"
+    route_targets[END] = END
+
     graph.add_conditional_edges(
         "supervisor",
         route_from_supervisor,
-        {worker_name: worker_name for worker_name in workers} | {END: END},  # type: ignore[arg-type]
+        route_targets,  # type: ignore[arg-type]
     )
 
     # ── Set entry point ────────────────────────────────────────────
     graph.set_entry_point("supervisor")
 
     logger.info(
-        "Built orchestrator graph: supervisor + %d workers (%s)",
+        "Built orchestrator graph: supervisor + %d workers + conflict pipeline (%s)",
         len(workers),
         ", ".join(workers.keys()),
     )

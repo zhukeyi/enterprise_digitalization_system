@@ -66,6 +66,7 @@ governance = [
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     "python-ldap>=3.4.0",
+    "pydantic[email]>=2.8.0",
 ]
 
 # ── Data Agent ────────────────────────────────────────────────────

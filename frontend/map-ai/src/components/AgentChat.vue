@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { useChatStore } from '../stores/chat'
 
 const chatStore = useChatStore()
@@ -12,6 +12,11 @@ function sendMessage() {
   // Simulate agent response
   chatStore.simulateAgentResponse()
 }
+
+// Cancel any pending simulation timeout when component unmounts
+onBeforeUnmount(() => {
+  chatStore.cancelSimulation()
+})
 </script>
 
 <template>

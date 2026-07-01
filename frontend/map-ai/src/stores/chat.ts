@@ -11,6 +11,7 @@ export const useChatStore = defineStore('chat', {
   state: () => ({
     messages: [] as ChatMessage[],
     loading: false,
+    _simulateTimeoutId: null as ReturnType<typeof setTimeout> | null,
   }),
   actions: {
     addMessage(role: 'user' | 'agent', content: string) {
@@ -22,8 +23,15 @@ export const useChatStore = defineStore('chat', {
       })
     },
     simulateAgentResponse() {
+      // Clear any pending timeout to prevent stale callbacks
+      if (this._simulateTimeoutId !== null) {
+        clearTimeout(this._simulateTimeoutId)
+      }
+
       this.loading = true
-      setTimeout(() => {
+      this._simulateTimeoutId = setTimeout(() => {
+        this._simulateTimeoutId = null
+
         const lastMsg = this.messages[this.messages.length - 1]?.content || ''
         let response = '这是 FDE AI 平台的模拟回复。接入真实后端 API 后将获得实际分析结果。'
 
@@ -38,6 +46,14 @@ export const useChatStore = defineStore('chat', {
         this.addMessage('agent', response)
         this.loading = false
       }, 800)
+    },
+    /** Cancel any pending simulateAgentResponse timeout. */
+    cancelSimulation() {
+      if (this._simulateTimeoutId !== null) {
+        clearTimeout(this._simulateTimeoutId)
+        this._simulateTimeoutId = null
+        this.loading = false
+      }
     },
   },
 })

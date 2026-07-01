@@ -64,16 +64,18 @@ dev: docker-up  ## Full dev environment: Docker + services
 	@echo "  Qdrant     : http://localhost:6333"
 	@echo "  MinIO      : http://localhost:9001 (console)"
 
-deploy-test:  ## Deploy to Oracle test server (217.142.246.70)
-	@echo "🔧 Deploying to Oracle ARM server..."
+deploy-test:  ## Deploy to test server (configure FDE_TEST_SERVER and FDE_SSH_KEY)
+	@test -n "$(FDE_TEST_SERVER)" || (echo "ERROR: Set FDE_TEST_SERVER=user@host" && exit 1)
+	@test -n "$(FDE_SSH_KEY)" || (echo "ERROR: Set FDE_SSH_KEY=/path/to/key" && exit 1)
+	@echo "Deploying to $(FDE_TEST_SERVER)..."
 	rsync -avz --exclude '.venv' --exclude '__pycache__' --exclude '.git' \
 		--exclude '.mypy_cache' --exclude '.pytest_cache' --exclude '.ruff_cache' \
 		--exclude 'htmlcov' --exclude '*.egg-info' \
-		-e "ssh -i ~/.ssh/arm.key -o StrictHostKeyChecking=no" \
-		./ ubuntu@217.142.246.70:~/fde-ai-platform/
-	ssh -i ~/.ssh/arm.key -o StrictHostKeyChecking=no ubuntu@217.142.246.70 \
+		-e "ssh -i $(FDE_SSH_KEY) -o StrictHostKeyChecking=no" \
+		./ $(FDE_TEST_SERVER):~/fde-ai-platform/
+	ssh -i $(FDE_SSH_KEY) -o StrictHostKeyChecking=no $(FDE_TEST_SERVER) \
 		"cd ~/fde-ai-platform && pip install -e '.[dev]'"
-	@echo "✅ Deployed to Oracle server"
+	@echo "Deployed to test server"
 
 # ═══════════════════════════════════════════════════════════════════
 # Code Quality

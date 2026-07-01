@@ -9,12 +9,17 @@ from agents.orchestrator.tools.registry import ToolRegistry
 from agents.rag_agent.integration import (
     _rag_ingest_handler,
     _rag_search_handler,
+    _reset_vector_store,
     register_rag_tools,
 )
 
 
 class TestRAGIntegration:
     """Tests for RAG tool registration and handlers."""
+
+    def setup_method(self) -> None:
+        """Reset VectorStore singleton before each test."""
+        _reset_vector_store()
 
     def test_register_rag_tools(self) -> None:
         """Register RAG tools should add rag_search and rag_ingest."""
@@ -76,6 +81,7 @@ class TestRAGIntegration:
 
     def test_rag_search_handler_error(self) -> None:
         """rag_search handler should return error dict on failure."""
+
         async def _async_search_error(*args: object, **kwargs: object) -> None:
             raise RuntimeError("Engine failed")
 
@@ -144,3 +150,34 @@ class TestRAGIntegration:
 
         # Verify RAG tools are available in the registry
         assert len(registry.get_tools_for_worker("rag")) == 2
+
+    def test_register_rag_tools_with_auth(self) -> None:
+        """register_rag_tools_with_auth should register permission-filtered tools."""
+        from agents.rag_agent.integration import register_rag_tools_with_auth
+
+        registry = ToolRegistry()
+
+        # Create a throwaway async session factory
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        async def _test_register() -> None:
+            engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+            try:
+                factory = async_sessionmaker(engine, expire_on_commit=False)
+
+                register_rag_tools_with_auth(
+                    registry=registry,
+                    user_id="user-1",
+                    session_factory=factory,
+                )
+
+                tools = registry.get_tools_for_worker("rag")
+                assert len(tools) == 2
+                assert tools[0].name == "rag_search"
+                assert tools[1].name == "rag_ingest"
+            finally:
+                await engine.dispose()
+
+        asyncio.run(_test_register())

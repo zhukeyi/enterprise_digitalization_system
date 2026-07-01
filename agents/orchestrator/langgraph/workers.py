@@ -13,6 +13,7 @@ M1-T6: Worker node base + RAG worker
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -77,7 +78,11 @@ class BaseWorker:
         logger.info("Worker '%s' executing: task=%s tool=%s", self.name, step.task, step.tool)
 
         try:
+            # execute() may return a coroutine if it calls async dispatch
             result = self.execute(step, state)
+            if isinstance(result, dict) and "worker_outputs" in result:
+                return result
+
             logger.info("Worker '%s' completed successfully", self.name)
 
             return {
@@ -86,13 +91,30 @@ class BaseWorker:
                 "error": None,
             }
 
-        except Exception as e:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            ConnectionError,
+            OSError,
+        ) as e:
             logger.error("Worker '%s' failed: %s", self.name, e)
             return {
                 "worker_outputs": {self.name: f"Error: {e}"},
                 "messages": [AIMessage(content=f"[{self.name}] Error: {e}")],
                 "error": str(e),
             }
+
+    def _run_dispatch(self, tool_name: str, **kwargs: Any) -> Any:
+        """Dispatch a tool, running async handlers synchronously.
+
+        ToolRegistry.dispatch() is async; this wraps it for sync callers.
+        """
+
+        coro = self.tool_registry.dispatch(tool_name, **kwargs)
+        return asyncio.run(coro)
 
     def execute(self, step: Any, state: OrchestratorState) -> Any:
         """Execute the worker's task. Must be overridden by subclasses.
@@ -106,7 +128,7 @@ class BaseWorker:
         """
         # Default: try to dispatch via tool registry
         if step.tool:
-            return self.tool_registry.dispatch(step.tool, **step.tool_args)
+            return self._run_dispatch(step.tool, **step.tool_args)
 
         # No specific tool — return task description as acknowledgment
         return f"Worker '{self.name}' acknowledged task: {step.task}"
@@ -147,19 +169,21 @@ class RAGWorker(BaseWorker):
 
                 for msg in reversed(state.messages):
                     if isinstance(msg, HumanMessage):
-                        query = msg.content
+                        # content can be str | list[str | dict], coerce to str
+                        content = msg.content
+                        query = content if isinstance(content, str) else str(content)
                         break
 
-            return self.tool_registry.dispatch("rag_search", query=query)
+            return self._run_dispatch("rag_search", query=query)
 
         if step.tool == "rag_ingest":
-            return self.tool_registry.dispatch("rag_ingest", **step.tool_args)
+            return self._run_dispatch("rag_ingest", **step.tool_args)
 
         # Default: search with task description as query
         if step.tool is None and step.task:
             query = step.task
             try:
-                return self.tool_registry.dispatch("rag_search", query=query)
+                return self._run_dispatch("rag_search", query=query)
             except KeyError:
                 return f"RAG worker acknowledged: {step.task}"
 
@@ -254,3 +278,70 @@ class GovernanceWorker(BaseWorker):
 
     name = "governance"
     description = "Access control — user management, RBAC, audit logging"
+
+
+# ══════════════════════════════════════════════════════════════════
+# M2-T5: New Sub-Agent Workers
+# ══════════════════════════════════════════════════════════════════
+
+
+class ComplianceWorker(BaseWorker):
+    """Compliance auditor worker.
+
+    Handles compliance-related tasks:
+    - Audit log querying and filtering
+    - Compliance report generation
+    - Risk assessment and validation
+    - Regulatory policy checks
+
+    M2-T5: Added as part of the sub-agent worker expansion.
+    """
+
+    name = "compliance"
+    description = "Compliance auditing — audit logs, risk checks, regulatory validation"
+
+
+class BusinessSystemWorker(BaseWorker):
+    """Business system integration worker.
+
+    Handles enterprise system integration tasks:
+    - CRM/ERP data queries
+    - Business workflow status checks
+    - System health monitoring
+    - Data synchronization operations
+
+    M2-T5: Added as part of the sub-agent worker expansion.
+    """
+
+    name = "business_system"
+    description = "Business system integration — CRM, ERP, workflow, data sync"
+
+
+class IMWorker(BaseWorker):
+    """Message hub worker for cross-platform IM operations.
+
+    Handles messaging tasks:
+    - Send messages to users/groups on WeCom/Feishu/DingTalk
+    - Broadcast announcements to multiple targets/platforms
+    - Query and sync cross-platform session context
+
+    M2-T3: Added as part of the IM message hub.
+    """
+
+    name = "im"
+    description = "Message hub — send, broadcast, session sync (WeCom/Feishu/DingTalk)"
+
+
+class MapWorker(BaseWorker):
+    """Spatial analysis worker for geographic intelligence.
+
+    Handles map-related tasks:
+    - Spatial query within geographic bounding boxes
+    - Cross-entity correlation analysis
+    - Region data and entity management
+
+    Module L: MapAI spatial analysis engine.
+    """
+
+    name = "map"
+    description = "Spatial analysis — geographic query, correlation, region data"

@@ -17,7 +17,9 @@ M1-T6: Supervisor with structured output
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -40,6 +42,10 @@ WORKER_DESCRIPTIONS = {
     "analysis": "Data analysis — NL2SQL, interactive charts, statistical reports",
     "router": "Model gateway — route to different LLM providers, fallback chain",
     "governance": "Access control — user management, RBAC, audit logging",
+    "compliance": "Compliance auditing — audit logs, risk checks, regulatory validation",
+    "business_system": "Business system integration — CRM, ERP, workflow, data sync",
+    "im": "Message hub — send, broadcast, session sync (WeCom/Feishu/DingTalk)",
+    "map": "Spatial analysis — geographic query, correlation, region data",
 }
 
 # ── Supervisor prompt template ──────────────────────────────────────
@@ -180,7 +186,7 @@ class SupervisorNode:
             # Parse structured output
             plan = self._parse_llm_response(response.content)
             return plan
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError, ConnectionError, TimeoutError, OSError) as e:
             logger.warning("LLM call failed: %s, falling back to mock", e)
             return self._mock_plan_from_messages(context_messages)
 
@@ -189,41 +195,36 @@ class SupervisorNode:
 
         Handles both JSON-string responses and already-parsed dicts.
         """
-        import json
 
         # Try direct JSON parse
         try:
             data = json.loads(content)
-            return SupervisorPlan(
-                steps=[PlanStep(**s) for s in data.get("steps", [])],
-                reasoning=data.get("reasoning", ""),
-                requires_rag=data.get("requires_rag", False),
-                complexity=data.get("complexity", "simple"),
-                finish=data.get("finish", False),
-            )
+            return self._parse_plan_json(data)
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
         # Try extracting JSON from markdown code blocks
-        import re
-
         json_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", content, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                return SupervisorPlan(
-                    steps=[PlanStep(**s) for s in data.get("steps", [])],
-                    reasoning=data.get("reasoning", ""),
-                    requires_rag=data.get("requires_rag", False),
-                    complexity=data.get("complexity", "simple"),
-                    finish=data.get("finish", False),
-                )
+                return self._parse_plan_json(data)
             except (json.JSONDecodeError, KeyError, TypeError):
                 pass
 
         # Fallback: treat as simple response
         logger.warning("Could not parse LLM response as structured plan, using fallback")
         return SupervisorPlan(steps=[], reasoning=content, finish=True)
+
+    def _parse_plan_json(self, data: dict[str, Any]) -> SupervisorPlan:
+        """Parse a dict into a SupervisorPlan."""
+        return SupervisorPlan(
+            steps=[PlanStep(**s) for s in data.get("steps", [])],
+            reasoning=data.get("reasoning", ""),
+            requires_rag=data.get("requires_rag", False),
+            complexity=data.get("complexity", "simple"),
+            finish=data.get("finish", False),
+        )
 
     def _mock_plan(self, state: OrchestratorState) -> SupervisorPlan:
         """Generate a mock plan for development/testing without LLM.
@@ -248,7 +249,9 @@ class SupervisorNode:
         last_user_msg: str = ""
         for msg in reversed(state.messages):
             if isinstance(msg, HumanMessage):
-                last_user_msg = str(msg.content) if not isinstance(msg.content, str) else msg.content
+                last_user_msg = (
+                    str(msg.content) if not isinstance(msg.content, str) else msg.content
+                )
                 break
 
         if not last_user_msg:
@@ -337,7 +340,9 @@ class SupervisorNode:
         last_user_msg: str = ""
         for msg in reversed(messages):
             if isinstance(msg, HumanMessage):
-                last_user_msg = str(msg.content) if not isinstance(msg.content, str) else msg.content
+                last_user_msg = (
+                    str(msg.content) if not isinstance(msg.content, str) else msg.content
+                )
                 break
 
         return SupervisorPlan(

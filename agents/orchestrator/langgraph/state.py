@@ -6,15 +6,47 @@ The state flows through the Supervisor-Worker graph:
   worker_outputs: accumulated results from worker executions
   plan: current execution plan from supervisor
   metadata: trace info, timing, etc.
+
+M2-T6: Added conflict detection, resolution, and final response fields.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+# ══════════════════════════════════════════════════════════════════
+# Conflict Models (M2-T6)
+# ══════════════════════════════════════════════════════════════════
+
+
+class ConflictReport(BaseModel):
+    """A detected conflict between two or more worker outputs."""
+
+    conflict_id: str = Field(description="Unique conflict identifier")
+    source_workers: list[str] = Field(description="Which workers produced conflicting outputs")
+    description: str = Field(description="Human-readable conflict description")
+    severity: Literal["low", "medium", "high", "critical"] = Field(
+        default="low", description="Severity level"
+    )
+    field: str = Field(default="", description="The specific field or key in conflict")
+    resolution_strategy: Literal[
+        "auto", "manual", "merge", "highest_confidence", "source_priority"
+    ] = Field(default="auto", description="How to resolve the conflict")
+
+
+class ConflictResolution(BaseModel):
+    """Resolution decision for a specific conflict."""
+
+    conflict_id: str = Field(description="Reference to ConflictReport.conflict_id")
+    resolved: bool = Field(default=False)
+    chosen_worker: str = Field(default="", description="Which worker's output to trust")
+    chosen_value: Any = Field(default=None, description="The resolved value")
+    reasoning: str = Field(default="", description="Why this resolution was chosen")
+
 
 # ══════════════════════════════════════════════════════════════════
 # Supervisor Plan — structured output from LLM
@@ -65,3 +97,21 @@ class OrchestratorState(BaseModel):
     )
     iteration: int = Field(default=0, description="Current iteration count (safety limit)")
     error: str | None = Field(default=None, description="Error message if any worker fails")
+
+    # ── M2-T6: Conflict Resolution ────────────────────────────────────
+    conflicts: list[ConflictReport] = Field(
+        default_factory=list,
+        description="Detected conflicts between worker outputs",
+    )
+    conflict_resolved: bool = Field(
+        default=False,
+        description="Whether conflicts have been resolved",
+    )
+    conflict_resolutions: list[ConflictResolution] = Field(
+        default_factory=list,
+        description="Resolution decisions for each conflict",
+    )
+    final_response: str = Field(
+        default="",
+        description="Final aggregated response generated for the user",
+    )

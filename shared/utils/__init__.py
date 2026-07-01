@@ -6,10 +6,10 @@ data validation, rate limiting, retry logic.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
-import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -103,7 +103,7 @@ async def retry_async(
             last_exc = e
             if attempt < max_retries:
                 delay = base_delay * (backoff_factor**attempt)
-                time.sleep(delay)
+                await asyncio.sleep(delay)
     raise last_exc  # type: ignore[misc]
 
 

@@ -8,6 +8,7 @@ M1-T6: Core tool registration mechanism
 
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -95,8 +96,11 @@ class ToolRegistry:
         """List tools in a specific category."""
         return [t for t in self._tools.values() if t.category == category]
 
-    def dispatch(self, tool_name: str, **kwargs: Any) -> Any:
+    async def dispatch(self, tool_name: str, **kwargs: Any) -> Any:
         """Execute a tool by name with given arguments.
+
+        Supports both sync and async handlers. If the handler is async,
+        the coroutine is properly awaited.
 
         Args:
             tool_name: Name of the tool to execute.
@@ -116,6 +120,8 @@ class ToolRegistry:
         logger.info("Dispatching tool: %s (worker=%s)", tool_name, tool.worker)
         try:
             result = tool.handler(**kwargs)
+            if inspect.iscoroutine(result):
+                result = await result
             logger.info("Tool '%s' completed successfully", tool_name)
             return result
         except Exception as e:

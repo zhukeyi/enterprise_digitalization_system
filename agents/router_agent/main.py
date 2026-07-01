@@ -12,9 +12,10 @@ M1-T7: Failover chain (automatic switch within 3s)
 from __future__ import annotations
 
 import logging
+import os
 import time
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -46,13 +47,26 @@ app = FastAPI(
 
 # ── Middleware ──────────────────────────────────────────────────────
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── CORS — configurable via env ───────────────────────────────
+
+_cors_origins = os.getenv("FDE_CORS_ORIGINS", "*")
+if _cors_origins == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    allowed = [o.strip() for o in _cors_origins.split(",")]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.add_middleware(TracingMiddleware)
 
@@ -61,6 +75,61 @@ foolproof_config = FoolproofConfig(
 )
 app.add_middleware(FoolproofMiddleware, config=foolproof_config)
 
+# ── Auth Middleware (M2-T1) ─────────────────────────────────────
+
+ENABLE_AUTH = os.getenv("FDE_ENABLE_AUTH", "").lower() in ("1", "true", "yes")
+
+if ENABLE_AUTH:
+    try:
+        from agents.governance_agent.auth.router import router as auth_router
+        from agents.governance_agent.middleware import AuthMiddleware
+
+        app.add_middleware(
+            AuthMiddleware,
+            public_paths=[
+                "/health",
+                "/docs",
+                "/redoc",
+                "/openapi.json",
+                "/auth/login",
+                "/auth/register",
+                "/auth/refresh",
+            ],
+        )
+        app.include_router(auth_router)
+        logger.info("AuthMiddleware and auth router registered (M2-T1)")
+    except ImportError:
+        logger.warning("Governance Agent dependencies not available — auth disabled")
+else:
+    logger.info("Auth middleware disabled (set FDE_ENABLE_AUTH=1 to enable)")
+
+# ── MapAI Router (Module L) ─────────────────────────────────────
+
+try:
+    from agents.map_agent import map_router
+
+    app.include_router(map_router)
+    logger.info("MapAI router registered at /map/*")
+except ImportError:
+    logger.warning("MapAI dependencies not available — /map endpoints disabled")
+
+# ── Startup — database initialization ───────────────────────────
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Initialize database tables on first start."""
+    try:
+        from agents.governance_agent.database.session import init_database
+
+        await init_database()
+        logger.info("Database tables initialized")
+    except ImportError:
+        logger.debug("Database not configured, skipping init")
+    except Exception as e:
+        logger.warning("Database init failed (may be expected in dev): %s", e)
+
+
 # ── Services (eagerly initialized for testability) ───────────────────
 
 model_registry = ModelRegistry()
@@ -68,7 +137,6 @@ model_registry.discover_adapters()
 routing_engine = RoutingEngine()
 fallback_chain = FallbackChain(model_registry)
 
-logger = logging.getLogger("fde.router")
 logger.info("Router Agent loaded with %d adapters", len(model_registry.list_models()))
 
 
@@ -95,7 +163,9 @@ async def list_models() -> ModelListResponse:
 
 
 @app.post("/v1/chat/completions", response_model=None, responses={400: {"model": ErrorResponse}})
-async def chat_completions(request: ChatCompletionRequest) -> ChatCompletionResponse | JSONResponse:
+async def chat_completions(
+    request: Request, chat_request: ChatCompletionRequest
+) -> ChatCompletionResponse | JSONResponse:
     """Chat completions endpoint (OpenAI-compatible).
 
     Flow:
@@ -104,26 +174,26 @@ async def chat_completions(request: ChatCompletionRequest) -> ChatCompletionResp
         3. Anti-foolproof checks warn on destructive prompts
     """
     start_time = time.monotonic()
-    trace_id = _get_trace_id()
+    trace_id = _get_trace_id(request)
 
     # Log incoming request (mask sensitive fields in production)
     logger.info(
         "chat_completion trace=%s model=%s messages=%d max_tokens=%d",
         trace_id,
-        request.model,
-        len(request.messages),
-        request.max_tokens or 0,
+        chat_request.model,
+        len(chat_request.messages),
+        chat_request.max_tokens or 0,
     )
 
     try:
         # Step 1: Route to best model
-        selected_model = request.model or routing_engine.route(request)
+        selected_model = chat_request.model or routing_engine.route(chat_request)
         logger.info("trace=%s routed_to=%s", trace_id, selected_model)
 
         # Step 2: Execute with fallback
         response = await fallback_chain.execute(
             model_name=selected_model,
-            request=request,
+            request=chat_request,
             trace_id=trace_id,
         )
 
@@ -144,11 +214,14 @@ async def chat_completions(request: ChatCompletionRequest) -> ChatCompletionResp
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _get_trace_id() -> str:
-    """Get trace ID from context or generate new one."""
-    import uuid
+def _get_trace_id(request: Request) -> str:
+    """Get trace ID from TracingMiddleware state or generate new one."""
+    try:
+        return request.state.trace_id
+    except (AttributeError, KeyError):
+        import uuid
 
-    return str(uuid.uuid4())
+        return str(uuid.uuid4())
 
 
 # Debug entry point

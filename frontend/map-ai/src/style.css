@@ -171,6 +171,30 @@ body { min-height: 100vh; }
   padding: 12px 16px;
 }
 
+.editor-toolbar {
+  float: right;
+}
+
+.toolbar-btn {
+  background: var(--fde-bg);
+  border: 1px solid var(--fde-border);
+  padding: 2px 6px;
+  margin-left: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.toolbar-btn--bold {
+  background: var(--fde-bg);
+  border-color: var(--fde-border);
+}
+
+.toolbar-btn--highlight {
+  background: var(--fde-accent-light);
+  border-color: var(--fde-accent);
+}
+
 /* Message bubbles */
 .message {
   margin-bottom: 12px;
@@ -214,4 +238,21 @@ body { min-height: 100vh; }
 
 /* MapboxGL overrides */
 .mapboxgl-map { font-family: inherit; }
-.mapboxgl-ctrl-logo { display: none !important; }
+
+/* Map error message */
+.map-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--fde-surface);
+  border: 1px solid var(--fde-accent);
+  border-radius: var(--fde-radius);
+  padding: 16px 24px;
+  color: var(--fde-text);
+  font-size: 14px;
+  text-align: center;
+  z-index: 100;
+  max-width: 400px;
+  box-shadow: var(--fde-shadow);
+}

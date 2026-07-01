@@ -2,8 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import mapboxgl from 'mapbox-gl'
 
-// Mapbox token — set via env variable VITE_MAPBOX_TOKEN
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.placeholder'
+// Mapbox token — must be set via env variable VITE_MAPBOX_TOKEN
+const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
 
 const mapContainer = ref<HTMLDivElement>()
 let map: mapboxgl.Map | null = null
@@ -15,6 +15,8 @@ const styles = [
   { id: 'dark-v11', name: '暗色' },
 ]
 
+const mapError = ref<string>('')
+
 function switchStyle(styleId: string) {
   mapStyle.value = styleId
   if (map) {
@@ -24,6 +26,15 @@ function switchStyle(styleId: string) {
 
 onMounted(() => {
   if (!mapContainer.value) return
+
+  // Validate token before initializing map
+  if (!mapboxToken || mapboxToken === 'pk.placeholder') {
+    mapError.value = 'VITE_MAPBOX_TOKEN 未配置，地图无法加载。请在 .env 文件中设置有效的 Mapbox Access Token。'
+    console.error('VITE_MAPBOX_TOKEN not set. Map will not load.')
+    return
+  }
+
+  mapboxgl.accessToken = mapboxToken
 
   map = new mapboxgl.Map({
     container: mapContainer.value,
@@ -56,6 +67,9 @@ onUnmounted(() => {
         :style="mapStyle === s.id ? { background: 'var(--fde-primary)', color: 'white' } : {}">
         {{ s.name }}
       </button>
+    </div>
+    <div v-if="mapError" class="map-error">
+      ⚠️ {{ mapError }}
     </div>
     <div ref="mapContainer" class="map-container" />
   </section>

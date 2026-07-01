@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,7 @@ class EmbeddingConfig(BaseModel):
     """Configuration for the embedding model."""
 
     model_name: str = Field(default="BAAI/bge-m3", description="HuggingFace model name")
-    device: str = Field(default="cpu", description="Inference device (cpu, cuda, mps)")
+    device: Literal["cpu", "cuda", "mps"] = Field(default="cpu", description="Inference device")
     batch_size: int = Field(default=8, ge=1, le=128, description="Max batch size")
     max_seq_length: int = Field(default=8192, description="Maximum sequence length (BGE-M3: 8192)")
     normalize_embeddings: bool = Field(default=True, description="L2-normalize output vectors")
@@ -187,7 +187,7 @@ class EmbeddingModel:
         latency_per = (elapsed / max(1, len(texts))) * 1000
 
         results = []
-        for i, (text, vec) in enumerate(zip(texts, vectors, strict=False)):
+        for i, (text, vec) in enumerate(zip(texts, vectors, strict=True)):
             results.append(
                 EmbeddingResult(
                     index=i,

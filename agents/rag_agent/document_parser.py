@@ -146,7 +146,10 @@ class PdfParser(BaseParser):
         try:
             import pymupdf
         except ImportError:
-            raise ParserError("PyMuPDF not installed. Install: pip install pymupdf")
+            try:
+                import fitz as pymupdf  # type: ignore[no-redef]
+            except ImportError:
+                raise ParserError("PyMuPDF not installed. Install: pip install pymupdf")
 
         docs: list[Document] = []
         path = Path(file_path)
