@@ -7,6 +7,7 @@ and region data. Voice features suspended per user request.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
@@ -19,6 +20,8 @@ from agents.map_agent.demo_data import (
 from agents.map_agent.engine import get_correlation_engine
 from agents.map_agent.models import (
     AnalysisContext,
+    AnalysisRequest,
+    AnalysisResult,
     CorrelationRequest,
     CorrelationResponse,
     GeoEntity,
@@ -158,6 +161,59 @@ async def correlate(body: CorrelationRequest) -> CorrelationResponse:
     )
 
     return response
+
+
+# ══════════════════════════════════════════════════════════════════
+# Full Analysis Pipeline Endpoint (M3-T10)
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.post("/analysis", response_model=AnalysisResult)
+async def run_analysis(body: AnalysisRequest) -> AnalysisResult:
+    """Run the full spatial analysis pipeline (3 LangGraph nodes).
+
+    Pipeline: fetch_entities -> compute_correlation -> generate_interpretation
+
+    Accepts a list of entity IDs and returns correlation results
+    with AI-generated interpretation text.
+
+    Safety: minimum 2 entity IDs required.
+    """
+    if len(body.entity_ids) < 2:
+        raise HTTPException(
+            400,
+            f"需要至少 2 个实体 ID 才能进行相关性分析 (当前: {len(body.entity_ids)}).",
+        )
+
+    from agents.map_agent.langgraph_nodes import run_pipeline
+
+    start = time.monotonic()
+    state = run_pipeline(
+        entity_ids=body.entity_ids,
+        method=body.method,
+        query=body.query,
+    )
+    total_ms = int((time.monotonic() - start) * 1000)
+
+    correlation = state.get("correlation")
+    entities = state.get("entities", [])
+
+    logger.info(
+        "Analysis pipeline complete: %d entities, %d pairs, %dms total",
+        len(entities),
+        correlation.pair_count if correlation else 0,
+        total_ms,
+    )
+
+    return AnalysisResult(
+        entity_ids=body.entity_ids,
+        entities=entities,
+        correlation=correlation,
+        interpretation=state.get("interpretation", ""),
+        execution_time_ms=total_ms,
+        nodes_traced=state.get("nodes_traced", []),
+        errors=state.get("errors", []),
+    )
 
 
 # ══════════════════════════════════════════════════════════════════

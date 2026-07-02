@@ -171,3 +171,43 @@ class MapRegion(BaseModel):
     center: GeoPoint
     zoom: int = Field(default=10, ge=1, le=20)
     entities: list[GeoEntity] = Field(default_factory=list)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Full Analysis Pipeline Models (M3-T10)
+# ══════════════════════════════════════════════════════════════════
+
+
+class AnalysisRequest(BaseModel):
+    """Request for the full spatial analysis pipeline."""
+
+    entity_ids: list[str] = Field(
+        description="List of entity IDs to analyze (min 2)",
+        min_length=1,
+    )
+    method: str = Field(
+        default="pearson",
+        description="Correlation method: pearson, spearman, spatial_autocorr, distance_weighted",
+    )
+    query: str = Field(
+        default="",
+        description="Optional user natural language query for context",
+    )
+
+
+class AnalysisResult(BaseModel):
+    """Complete result of the spatial analysis pipeline."""
+
+    entity_ids: list[str] = Field(description="Requested entity IDs")
+    entities: list[GeoEntity] = Field(default_factory=list, description="Fetched entities")
+    correlation: CorrelationResponse | None = Field(
+        default=None,
+        description="Correlation analysis result",
+    )
+    interpretation: str = Field(default="", description="AI interpretation text")
+    execution_time_ms: int = Field(default=0, description="Total pipeline execution time")
+    nodes_traced: list[str] = Field(
+        default_factory=list,
+        description="Pipeline nodes executed in order",
+    )
+    errors: list[str] = Field(default_factory=list, description="Accumulated warnings/errors")
