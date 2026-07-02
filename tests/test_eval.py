@@ -139,9 +139,7 @@ class TestGoldenDatasetManagerAddSample:
 
 class TestGoldenDatasetManagerMerge:
     def test_merge_datasets(self) -> None:
-        ds_a = _make_dataset(
-            samples=[_make_sample("s001", "问题A"), _make_sample("s002", "问题B")]
-        )
+        ds_a = _make_dataset(samples=[_make_sample("s001", "问题A"), _make_sample("s002", "问题B")])
         ds_b = GoldenDataset(
             id="ds_b",
             name="ds_b",
@@ -252,12 +250,14 @@ class TestPromptfooRunner:
             assert PromptfooRunner.is_available() is False
 
     def test_parse_output_valid(self) -> None:
-        raw = json.dumps({
-            "results": [
-                {"success": True, "prompt": {"raw": "q1"}},
-                {"success": False, "prompt": {"raw": "q2"}, "error": "assertion failed"},
-            ]
-        })
+        raw = json.dumps(
+            {
+                "results": [
+                    {"success": True, "prompt": {"raw": "q1"}},
+                    {"success": False, "prompt": {"raw": "q2"}, "error": "assertion failed"},
+                ]
+            }
+        )
         result = PromptfooRunner.parse_output(raw, duration_ms=500)
         assert result.total == 2
         assert result.passed is False
@@ -270,9 +270,7 @@ class TestPromptfooRunner:
         assert result.total == 0
 
     def test_generate_config(self) -> None:
-        ds = _make_dataset(
-            samples=[_make_sample("s001", "测试问题", "测试答案")]
-        )
+        ds = _make_dataset(samples=[_make_sample("s001", "测试问题", "测试答案")])
         config = PromptfooRunner.generate_config(ds)
         assert "providers" in config
         assert "tests" in config
@@ -296,7 +294,9 @@ class TestEvalReportGenerator:
     def report(self, sample_dataset: GoldenDataset) -> EvalReport:
         ragas_results = [
             RagasEvalResult(metric_name="faithfulness", score=0.85, threshold=0.70, passed=True),
-            RagasEvalResult(metric_name="answer_relevancy", score=0.60, threshold=0.70, passed=False),
+            RagasEvalResult(
+                metric_name="answer_relevancy", score=0.60, threshold=0.70, passed=False
+            ),
         ]
         pf_result = PromptfooResult(passed=True, total=5, failures=[], duration_ms=1200)
         return EvalReportGenerator.generate(ragas_results, pf_result, sample_dataset)

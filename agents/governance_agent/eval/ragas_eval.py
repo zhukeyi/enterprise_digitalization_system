@@ -90,7 +90,9 @@ class RagasEvaluator:
                 base_url=self.config.embedding_base_url,
                 api_key="not-needed",
             )
-            logger.info("Ragas LLM initialised: %s @ %s", self.config.llm_model, self.config.llm_base_url)
+            logger.info(
+                "Ragas LLM initialised: %s @ %s", self.config.llm_model, self.config.llm_base_url
+            )
         except Exception as exc:
             logger.warning(
                 "Failed to initialise LLM for Ragas (%s). LLM-dependent metrics will be skipped.",

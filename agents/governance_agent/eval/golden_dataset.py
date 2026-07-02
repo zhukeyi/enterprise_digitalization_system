@@ -110,9 +110,7 @@ class GoldenDatasetManager:
     @staticmethod
     def add_sample(dataset: GoldenDataset, sample: GoldenSample) -> GoldenDataset:
         """Add a sample with deduplication based on query hash."""
-        existing_hashes = {
-            hashlib.sha256(s.query.encode()).hexdigest() for s in dataset.samples
-        }
+        existing_hashes = {hashlib.sha256(s.query.encode()).hexdigest() for s in dataset.samples}
         new_hash = hashlib.sha256(sample.query.encode()).hexdigest()
 
         if new_hash in existing_hashes:
@@ -133,9 +131,7 @@ class GoldenDatasetManager:
             tags=list(set(dataset_a.tags + dataset_b.tags)),
         )
 
-        existing_hashes = {
-            hashlib.sha256(s.query.encode()).hexdigest() for s in merged.samples
-        }
+        existing_hashes = {hashlib.sha256(s.query.encode()).hexdigest() for s in merged.samples}
 
         for sample in dataset_b.samples:
             h = hashlib.sha256(sample.query.encode()).hexdigest()

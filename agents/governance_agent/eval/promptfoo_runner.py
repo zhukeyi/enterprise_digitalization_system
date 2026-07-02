@@ -31,7 +31,9 @@ class PromptfooConfig(BaseModel):
 
     config_path: str = Field(..., description="Path to promptfoo.yaml config file")
     assertions: list[dict[str, Any]] = Field(default_factory=list)
-    timeout: int = Field(default=_DEFAULT_TIMEOUT, gt=0, description="Subprocess timeout in seconds")
+    timeout: int = Field(
+        default=_DEFAULT_TIMEOUT, gt=0, description="Subprocess timeout in seconds"
+    )
 
 
 class PromptfooResult(BaseModel):
@@ -88,9 +90,13 @@ class PromptfooRunner:
             raise FileNotFoundError(f"Promptfoo config not found: {self.config.config_path}")
 
         cmd = [
-            "npx", "promptfoo", "eval",
-            "--config", str(config_file),
-            "--output", "-",       # write JSON to stdout
+            "npx",
+            "promptfoo",
+            "eval",
+            "--config",
+            str(config_file),
+            "--output",
+            "-",  # write JSON to stdout
             "--no-progress-bar",
         ]
 
@@ -106,7 +112,9 @@ class PromptfooRunner:
             raw_output = result.stdout + result.stderr
 
             if result.returncode != 0:
-                logger.warning("promptfoo exited with code %d: %s", result.returncode, result.stderr)
+                logger.warning(
+                    "promptfoo exited with code %d: %s", result.returncode, result.stderr
+                )
                 return PromptfooResult(
                     passed=False,
                     total=0,
@@ -175,11 +183,13 @@ class PromptfooRunner:
         for item in results_list:
             success = item.get("success", True)
             if not success:
-                failures.append({
-                    "prompt": item.get("prompt", {}).get("raw", ""),
-                    "error": item.get("error", ""),
-                    "grading": item.get("grading", {}),
-                })
+                failures.append(
+                    {
+                        "prompt": item.get("prompt", {}).get("raw", ""),
+                        "error": item.get("error", ""),
+                        "grading": item.get("grading", {}),
+                    }
+                )
 
         return PromptfooResult(
             passed=len(failures) == 0,
@@ -205,10 +215,7 @@ class PromptfooRunner:
         Returns:
             A dict suitable for YAML serialisation as promptfoo config.
         """
-        prompts = [
-            {"id": f"test-{sample.id}", "raw": sample.query}
-            for sample in dataset.samples
-        ]
+        prompts = [{"id": f"test-{sample.id}", "raw": sample.query} for sample in dataset.samples]
 
         tests: list[dict[str, Any]] = []
         for sample in dataset.samples:

@@ -31,7 +31,9 @@ class EvalReport(BaseModel):
         description="ISO-8601 report generation timestamp",
     )
     ragas_results: list[RagasEvalResult] = Field(default_factory=list)
-    promptfoo_result: PromptfooResult = Field(default_factory=lambda: PromptfooResult(passed=True, total=0))
+    promptfoo_result: PromptfooResult = Field(
+        default_factory=lambda: PromptfooResult(passed=True, total=0)
+    )
     dataset_summary: dict[str, Any] = Field(default_factory=dict)
     overall_pass: bool = Field(default=False, description="True if all evaluations passed")
 
@@ -101,7 +103,9 @@ class EvalReportGenerator:
         if pf.total > 0:
             pf_status = "PASS ✅" if pf.passed else "FAIL ❌"
             lines.append(f"- **状态**: {pf_status}")
-            lines.append(f"- Total: {pf.total}, Passed: {pf.total - len(pf.failures)}, Failed: {len(pf.failures)}")
+            lines.append(
+                f"- Total: {pf.total}, Passed: {pf.total - len(pf.failures)}, Failed: {len(pf.failures)}"
+            )
             lines.append(f"- Duration: {pf.duration_ms}ms")
             if pf.failures:
                 lines.append("")

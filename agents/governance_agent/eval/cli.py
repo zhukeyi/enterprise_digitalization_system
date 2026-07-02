@@ -83,7 +83,9 @@ def run_eval_suite(
 
         for r in ragas_results:
             status = "PASS" if r.passed else "FAIL"
-            logger.info("  %s: %.2f (threshold %.2f) [%s]", r.metric_name, r.score, r.threshold, status)
+            logger.info(
+                "  %s: %.2f (threshold %.2f) [%s]", r.metric_name, r.score, r.threshold, status
+            )
     else:
         logger.info("--- Skipping Ragas evaluation ---")
 
@@ -123,7 +125,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="FDE AI Platform Evaluation Suite")
     parser.add_argument("--dataset", type=str, default=None, help="Path to golden dataset JSONL")
     parser.add_argument("--promptfoo", type=str, default=None, help="Path to promptfoo.yaml config")
-    parser.add_argument("--output-dir", type=str, default="eval_reports", help="Output directory for reports")
+    parser.add_argument(
+        "--output-dir", type=str, default="eval_reports", help="Output directory for reports"
+    )
     parser.add_argument("--skip-ragas", action="store_true", help="Skip Ragas evaluation")
     parser.add_argument("--skip-promptfoo", action="store_true", help="Skip Promptfoo evaluation")
 
