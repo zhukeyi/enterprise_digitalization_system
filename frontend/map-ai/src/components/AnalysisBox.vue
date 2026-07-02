@@ -1,0 +1,313 @@
+<script setup lang="ts">
+/**
+ * AnalysisBox — Floating analysis collection box (M3-T9).
+ *
+ * Global floating panel that displays all marked entities as draggable cards.
+ * Supports:
+ * - Minimize/expand toggle
+ * - Drag-and-drop reordering of entity cards
+ * - Clear all button
+ * - Submit analysis button (disabled if < 2 entities)
+ * - Real-time entity count and validation feedback
+ */
+import { ref } from 'vue'
+import { useAnalysisStore } from '../stores/analysis'
+import EntityCard from './EntityCard.vue'
+import VoiceTextInput from './VoiceTextInput.vue'
+import PronounHint from './PronounHint.vue'
+
+const analysisStore = useAnalysisStore()
+const isMinimized = ref(false)
+const dragFromIndex = ref<number | null>(null)
+
+function toggleMinimize() {
+  isMinimized.value = !isMinimized.value
+}
+
+function handleDragStart(index: number) {
+  dragFromIndex.value = index
+}
+
+function handleDrop(toIndex: number) {
+  if (dragFromIndex.value === null) return
+  const from = dragFromIndex.value
+  if (from === toIndex) return
+
+  const entities = [...analysisStore.markedEntities]
+  const [moved] = entities.splice(from, 1)
+  entities.splice(toIndex, 0, moved)
+  analysisStore.reorderEntities(entities)
+  dragFromIndex.value = null
+}
+
+function clearAll() {
+  analysisStore.clearAll()
+}
+
+async function submitAnalysis() {
+  if (!analysisStore.canAnalyze) return
+  analysisStore.setAnalyzing(true)
+  // Actual API call will be wired in M3-T11 with WebSocket
+  // For now, simulate a delay and store a placeholder result
+  setTimeout(() => {
+    analysisStore.setAnalysisResult({
+      entityIds: analysisStore.entityIds,
+      timestamp: Date.now(),
+      status: 'completed (simulated)',
+    })
+    analysisStore.addToast(
+      `分析完成 (${analysisStore.entityCount} 个实体)`,
+      'success',
+    )
+    analysisStore.setAnalyzing(false)
+  }, 1500)
+}
+</script>
+
+<template>
+  <div
+    v-if="analysisStore.isAnalysisBoxOpen"
+    class="analysis-box"
+    :class="{ minimized: isMinimized }"
+  >
+    <!-- Header -->
+    <div class="analysis-box-header" @click="toggleMinimize">
+      <div class="header-left">
+        <span class="header-icon">📊</span>
+        <span class="header-title">分析收纳盒</span>
+        <span class="entity-count-badge">
+          {{ analysisStore.entityCount }}
+        </span>
+      </div>
+      <div class="header-right">
+        <button
+          v-if="!isMinimized && analysisStore.entityCount > 0"
+          class="header-btn clear-btn"
+          title="清空"
+          @click.stop="clearAll"
+        >
+          清空
+        </button>
+        <button class="header-btn minimize-btn" title="最小化">
+          {{ isMinimized ? '▲' : '▼' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Body (hidden when minimized) -->
+    <div v-if="!isMinimized" class="analysis-box-body">
+      <!-- Entity list -->
+      <div class="entity-list">
+        <div
+          v-if="analysisStore.markedEntities.length === 0"
+          class="empty-state"
+        >
+          <span class="empty-icon">📌</span>
+          <p>在地图或列表中点击 "+" 按钮<br />添加实体进行关联分析</p>
+        </div>
+        <EntityCard
+          v-for="(entity, index) in analysisStore.markedEntities"
+          :key="entity.id"
+          :entity="entity"
+          :index="index"
+          @dragstart="handleDragStart"
+          @drop="handleDrop"
+        />
+      </div>
+
+      <!-- Pronoun hint -->
+      <PronounHint
+        v-if="analysisStore.entityCount > 0"
+        :entity-name="analysisStore.markedEntities[analysisStore.entityCount - 1]?.name || ''"
+      />
+
+      <!-- Voice + text input -->
+      <VoiceTextInput
+        v-if="analysisStore.canAnalyze"
+        placeholder="补充分析指令 (可选)..."
+      />
+
+      <!-- Submit -->
+      <div class="submit-area">
+        <div v-if="!analysisStore.canAnalyze" class="submit-hint">
+          至少需要 2 个实体才能进行关联分析
+        </div>
+        <button
+          class="submit-btn"
+          :disabled="!analysisStore.canAnalyze || analysisStore.isAnalyzing"
+          @click="submitAnalysis"
+        >
+          <span v-if="analysisStore.isAnalyzing" class="loading-spinner" />
+          {{ analysisStore.isAnalyzing ? '分析中...' : '提交关联分析' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.analysis-box {
+  position: fixed;
+  bottom: 20px;
+  right: 400px;
+  width: 340px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  z-index: 9000;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.analysis-box.minimized {
+  width: 220px;
+}
+
+.analysis-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #1a73e8, #4285f4);
+  color: white;
+  cursor: pointer;
+  user-select: none;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-icon {
+  font-size: 16px;
+}
+
+.header-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.entity-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.header-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.header-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.analysis-box-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.submit-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.submit-hint {
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+}
+
+.submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #1a73e8;
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #1557b0;
+  transform: translateY(-1px);
+}
+
+.submit-btn:disabled {
+  background: #e0e0e0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

@@ -21,4 +21,26 @@ export async function healthCheck() {
   return api.get('/health')
 }
 
+// Map analysis — POST /map/analysis (M3-T9/M3-T10)
+export async function submitMapAnalysis(
+  entityIds: string[],
+  method?: string,
+  query?: string,
+) {
+  return api.post('/map/analysis', { entity_ids: entityIds, method, query })
+}
+
+// Map spatial correlation — POST /map/correlate
+export async function correlateEntities(
+  entityIds: string[],
+  method?: string,
+) {
+  return api.post('/map/correlate', { entity_ids: entityIds, method })
+}
+
+// Map regions list — GET /map/regions
+export async function getMapRegions() {
+  return api.get('/map/regions')
+}
+
 export default api

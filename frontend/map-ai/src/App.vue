@@ -3,6 +3,7 @@ import MapView from './components/MapView.vue'
 import AgentChat from './components/AgentChat.vue'
 import TiptapEditor from './components/TiptapEditor.vue'
 import EntityToast from './components/EntityToast.vue'
+import AnalysisBox from './components/AnalysisBox.vue'
 </script>
 
 <template>
@@ -24,4 +25,7 @@ import EntityToast from './components/EntityToast.vue'
 
   <!-- Global toast notifications for entity actions -->
   <EntityToast />
+
+  <!-- Floating analysis collection box -->
+  <AnalysisBox />
 </template>
