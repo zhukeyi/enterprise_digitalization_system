@@ -1,0 +1,37 @@
+# ===================================================================
+# RAG-specific assertions for Promptfoo
+# ===================================================================
+# These assertions verify RAG pipeline quality:
+# - Response is not empty
+# - Response cites or references source material
+# - Response does not hallucinate fabricated facts
+# ===================================================================
+
+# Import with promptfoo.yaml via:
+#   tests:
+#     - assert: !ref rag_assertions.yaml
+
+- type: "not-equals"
+  value: ""
+  weight: 1
+
+- type: "llm-rubric"
+  value: >
+    The response should be grounded in the provided context documents.
+    It should not fabricate information that is not present in the source material.
+    If the question cannot be answered from the context, the response should clearly state that.
+  weight: 2
+
+- type: "llm-rubric"
+  value: >
+    The response should reference or cite the source material when providing answers.
+    Look for phrases like '根据...', '依据...', or explicit document references.
+  weight: 1
+
+- type: "not-icontains"
+  value: "I don't know"
+  weight: 0.5
+
+- type: "not-icontains"
+  value: "作为AI助手"
+  weight: 0.5

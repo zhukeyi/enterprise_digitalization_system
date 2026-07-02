@@ -22,7 +22,7 @@ description: Transform raw product requirements into a rigorous software enginee
 - 新增模块/Agent（如从空壳实现 `data_agent`、新建 `hr_agent`）
 - 跨模块改动（涉及 3 个及以上文件或目录）
 - 涉及数据模型设计的任务（新增 Pydantic/SQLAlchemy 模型）
-- 用户明确说“先做设计”或“先出方案”
+- 用户明确说"先做设计"或"先出方案"
 
 ### 选择性使用（简化版，只填 1/2/4/5/8/11 章）
 - 中等复杂度的功能新增（如在已有模块中新增一个工具）
@@ -37,7 +37,6 @@ description: Transform raw product requirements into a rigorous software enginee
 - 单文件小改动（如增加一个辅助函数）
 
 如果不确定是否需要规格书，**默认先写简化版（1/2/4/5 章），让用户确认方向和范围后再决定是否深入。**
-
 ## 输出语言
 
 所有输出使用**中文**。专有名词（API endpoint、函数名、类名、文件名）保留英文。
