@@ -2,6 +2,7 @@
 import MapView from './components/MapView.vue'
 import AgentChat from './components/AgentChat.vue'
 import TiptapEditor from './components/TiptapEditor.vue'
+import EntityToast from './components/EntityToast.vue'
 </script>
 
 <template>
@@ -20,4 +21,7 @@ import TiptapEditor from './components/TiptapEditor.vue'
     <AgentChat />
     <TiptapEditor />
   </aside>
+
+  <!-- Global toast notifications for entity actions -->
+  <EntityToast />
 </template>
