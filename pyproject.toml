@@ -77,6 +77,9 @@ data = [
     "feedparser>=6.0.0",
     "newspaper3k>=0.2.8",
     "clickhouse-connect>=0.7.0",
+    "jinja2>=3.1.0",
+    "matplotlib>=3.8.0",
+    "apscheduler>=3.10.0",
 ]
 
 # ── Analysis Agent ────────────────────────────────────────────────
@@ -223,6 +226,10 @@ module = [
     "langsmith.*",
     "ragas.*",
     "datasets",
+    "jinja2",
+    "matplotlib",
+    "matplotlib.*",
+    "apscheduler.*",
 ]
 ignore_missing_imports = true
 
