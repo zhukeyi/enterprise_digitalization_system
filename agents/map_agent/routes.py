@@ -217,6 +217,72 @@ async def run_analysis(body: AnalysisRequest) -> AnalysisResult:
 
 
 # ══════════════════════════════════════════════════════════════════
+# Async Analysis Endpoint (M3-T11)
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.post("/analysis/async")
+async def start_async_analysis(
+    body: AnalysisRequest,
+    session_id: str = Query(default="", description="WebSocket session ID"),
+) -> dict:
+    """Start an async analysis task with WebSocket progress push.
+
+    The task runs in the background and pushes progress updates
+    to the WebSocket connection identified by session_id.
+
+    Returns the task_id for polling status via GET /map/tasks/{task_id}.
+    """
+    from agents.map_agent.foolproof import validate_analysis_request
+
+    # Pre-flight validation
+    validation = validate_analysis_request(body.entity_ids)
+    if not validation.ok:
+        raise HTTPException(400, validation.message)
+
+    sid = session_id if session_id else str(uuid.uuid4())
+
+    # We can't inject BackgroundTasks into a non-dependency route easily,
+    # so use the asyncio task approach
+    from agents.map_agent.tasks import run_analysis_background
+
+    task_id = await run_analysis_background(body, session_id=sid)
+
+    return {
+        "task_id": task_id,
+        "session_id": sid,
+        "status": "started",
+        "entity_count": len(body.entity_ids),
+    }
+
+
+@router.get("/tasks/{task_id}")
+async def get_task_status(task_id: str) -> dict:
+    """Get the status of an async analysis task."""
+    from agents.map_agent.tasks import get_task_store
+
+    store = get_task_store()
+    info = store.get(task_id)
+    if info is None:
+        raise HTTPException(404, f"Task '{task_id}' not found")
+
+    result_data = None
+    if info.result is not None:
+        result_data = info.result.model_dump()
+
+    return {
+        "task_id": info.task_id,
+        "status": info.status,
+        "progress": info.progress,
+        "entity_ids": info.entity_ids,
+        "result": result_data,
+        "error": info.error,
+        "created_at": info.created_at,
+        "completed_at": info.completed_at,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
 # Health
 # ══════════════════════════════════════════════════════════════════
 
