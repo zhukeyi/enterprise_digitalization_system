@@ -14,7 +14,7 @@ from agents.data_agent.models import CollectedItem, SourceConfig, SourceType
 
 logger = logging.getLogger("fde.data.scrapers.base")
 
-__all__ = ["BaseScraper", "ScrapingError", "ScraperRegistry"]
+__all__ = ["BaseScraper", "ScraperRegistry", "ScrapingError"]
 
 
 class ScrapingError(Exception):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 
 import pytest
 
@@ -18,12 +17,9 @@ from agents.data_agent.models import (
     SourceType,
 )
 from agents.data_agent.pipeline import DataPipeline, get_datastore, reset_datastore
-from agents.data_agent.scrapers.api_scraper import APIScraper
 from agents.data_agent.scrapers.base import ScraperRegistry, ScrapingError
 from agents.data_agent.scrapers.http_scraper import HTTPScraper
-from agents.data_agent.scrapers.rss_scraper import RSSScraper
 from agents.orchestrator.tools.registry import ToolRegistry
-
 
 # ══════════════════════════════════════════════════════════════════
 # Fixtures
@@ -437,9 +433,7 @@ class TestIntegration:
         assert result["pii_masked_count"] == 1
 
     def test_data_quality_report_missing(self, registry: ToolRegistry) -> None:
-        result = asyncio.run(
-            registry.dispatch("data_quality_report", dataset_id="nonexistent")
-        )
+        result = asyncio.run(registry.dispatch("data_quality_report", dataset_id="nonexistent"))
         assert "error" in result
 
     def test_data_quality_report_no_dataset_id(self, registry: ToolRegistry) -> None:

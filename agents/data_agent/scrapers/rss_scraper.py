@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from xml.etree.ElementTree import ParseError as XMLParseError
 from xml.etree.ElementTree import fromstring
 
@@ -54,14 +53,16 @@ def _parse_feed_feedparser(raw: str, max_items: int) -> list[dict[str, object]]:
 
         tags = [t.get("term", "") for t in entry.get("tags", []) if t.get("term")]
 
-        items.append({
-            "title": entry.get("title", ""),
-            "content": content,
-            "author": entry.get("author", ""),
-            "link": entry.get("link", ""),
-            "published": entry.get("published", ""),
-            "tags": tags,
-        })
+        items.append(
+            {
+                "title": entry.get("title", ""),
+                "content": content,
+                "author": entry.get("author", ""),
+                "link": entry.get("link", ""),
+                "published": entry.get("published", ""),
+                "tags": tags,
+            }
+        )
 
     return items
 
@@ -101,7 +102,7 @@ def _parse_feed_stdlib(raw: str, max_items: int) -> list[dict[str, object]]:
             return ""
         # Try with namespace-stripped path
         child = None
-        for child_elem in elem:  # type: ignore[union-attr]
+        for child_elem in elem:  # type: ignore[attr-defined]
             child_tag = child_elem.tag.split("}")[-1] if "}" in child_elem.tag else child_elem.tag
             if child_tag == path:
                 child = child_elem
@@ -115,14 +116,16 @@ def _parse_feed_stdlib(raw: str, max_items: int) -> list[dict[str, object]]:
         link = _text(entry, "link")
         published = _text(entry, "pubDate") or _text(entry, "published") or _text(entry, "updated")
 
-        items.append({
-            "title": title,
-            "content": content,
-            "author": author,
-            "link": link,
-            "published": published,
-            "tags": [],
-        })
+        items.append(
+            {
+                "title": title,
+                "content": content,
+                "author": author,
+                "link": link,
+                "published": published,
+                "tags": [],
+            }
+        )
 
     return items
 
@@ -167,9 +170,7 @@ class RSSScraper(BaseScraper):
             ScrapingError: If fetch or parse fails.
         """
         if config.source_type != SourceType.RSS:
-            raise ScrapingError(
-                f"RSSScraper received non-rss source type: {config.source_type}"
-            )
+            raise ScrapingError(f"RSSScraper received non-rss source type: {config.source_type}")
 
         import httpx
 
@@ -192,9 +193,7 @@ class RSSScraper(BaseScraper):
         # Parse feed (sync operation → run in executor)
         loop = asyncio.get_event_loop()
         try:
-            parsed = await loop.run_in_executor(
-                None, _parse_feed, response.text, config.max_items
-            )
+            parsed = await loop.run_in_executor(None, _parse_feed, response.text, config.max_items)
         except ScrapingError:
             raise
         except (RuntimeError, ValueError, XMLParseError, OSError) as e:

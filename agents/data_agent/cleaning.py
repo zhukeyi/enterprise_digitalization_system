@@ -134,7 +134,9 @@ def _assess_quality(title: str, content: str, metadata: dict[str, Any]) -> float
     non_none_count = sum(1 for v in metadata.values() if v is not None and v != "")
     validity = min(non_none_count / _EXPECTED_METADATA_FIELDS, 1.0)
 
-    return round(completeness * _W_COMPLETENESS + length_score * _W_LENGTH + validity * _W_VALIDITY, 4)
+    return round(
+        completeness * _W_COMPLETENESS + length_score * _W_LENGTH + validity * _W_VALIDITY, 4
+    )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -199,9 +201,7 @@ class CleaningPipeline:
             # Step 4: Quality scoring
             quality_score = _assess_quality(title, content, metadata)
             if quality_score < _MIN_QUALITY_THRESHOLD:
-                logger.warning(
-                    "Item %s quality too low (%.2f), skipping", item.id, quality_score
-                )
+                logger.warning("Item %s quality too low (%.2f), skipping", item.id, quality_score)
                 continue
 
             cleaned.append(
@@ -263,9 +263,7 @@ class CleaningPipeline:
             content = item.content.strip()
 
         # Metadata: remove None and empty string values
-        metadata = {
-            str(k): v for k, v in item.metadata.items() if v is not None and v != ""
-        }
+        metadata = {str(k): v for k, v in item.metadata.items() if v is not None and v != ""}
 
         return title, content, metadata
 

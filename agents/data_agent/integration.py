@@ -18,12 +18,11 @@ from typing import Any
 from agents.data_agent.cleaning import CleaningPipeline
 from agents.data_agent.models import (
     CollectedItem,
-    DataQualityReport,
     PipelineResult,
     SourceConfig,
     SourceType,
 )
-from agents.data_agent.pipeline import DataPipeline, get_datastore, reset_datastore
+from agents.data_agent.pipeline import DataPipeline, get_datastore
 from agents.orchestrator.tools.registry import ToolDefinition, ToolRegistry
 
 logger = logging.getLogger("fde.data.integration")
@@ -193,9 +192,7 @@ async def _data_quality_report_handler(
     return {
         "dataset_id": dataset_id,
         "total_items": len(items),
-        "completeness_avg": round(
-            sum(1 for c in items if c.title and c.content) / len(items), 4
-        ),
+        "completeness_avg": round(sum(1 for c in items if c.title and c.content) / len(items), 4),
         "validity_avg": round(sum(c.quality_score for c in items) / len(items), 4),
         "pii_masked_count": sum(1 for c in items if c.pii_masked),
         "sources": list({c.source.value for c in items}),
@@ -222,7 +219,7 @@ def register_data_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolDefinition(
             name="data_collect",
-            description="从指定数据源采集数据 (web/RSS/API)，返回原始采集结果",
+            description="从指定数据源采集数据 (web/RSS/API),返回原始采集结果",
             worker="data",
             handler=_data_collect_handler,
             parameters={
@@ -250,7 +247,7 @@ def register_data_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolDefinition(
             name="data_clean",
-            description="清洗原始采集数据（去重/标准化/PII脱敏）",
+            description="清洗原始采集数据(去重/标准化/PII脱敏)",
             worker="data",
             handler=_data_clean_handler,
             parameters={
@@ -267,7 +264,7 @@ def register_data_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolDefinition(
             name="data_pipeline",
-            description="执行完整 ETL 流水线（采集→清洗→存储），返回数据集 ID 和质量报告",
+            description="执行完整 ETL 流水线(采集→清洗→存储),返回数据集 ID 和质量报告",
             worker="data",
             handler=_data_pipeline_handler,
             parameters={

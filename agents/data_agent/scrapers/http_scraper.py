@@ -8,9 +8,7 @@ HTMLParser-based extractor when selectolax is not installed.
 from __future__ import annotations
 
 import logging
-import re
 from html.parser import HTMLParser
-from typing import Any
 
 import httpx
 
@@ -75,11 +73,13 @@ class _StdlibArticleExtractor(HTMLParser):
         if self._in_article and tag in ("article", "div"):
             text = self._current_text.strip()
             if text:
-                self.articles.append({
-                    "title": self._current_title.strip() or text[:80],
-                    "text": text,
-                    "html": "",
-                })
+                self.articles.append(
+                    {
+                        "title": self._current_title.strip() or text[:80],
+                        "text": text,
+                        "html": "",
+                    }
+                )
             self._in_article = False
             self._current_text = ""
 
@@ -107,11 +107,13 @@ def _parse_html_selectolax(html: str, max_items: int) -> list[dict[str, str]]:
             tag.decompose()
         text = node.text(separator=" ", strip=True)
         if text:
-            items.append({
-                "title": title or text[:80],
-                "text": text,
-                "html": node.html,
-            })
+            items.append(
+                {
+                    "title": title or text[:80],
+                    "text": text,
+                    "html": node.html,
+                }
+            )
 
     return items
 
@@ -164,9 +166,7 @@ class HTTPScraper(BaseScraper):
             ScrapingError: If HTTP request fails after retries.
         """
         if config.source_type != SourceType.WEB:
-            raise ScrapingError(
-                f"HTTPScraper received non-web source type: {config.source_type}"
-            )
+            raise ScrapingError(f"HTTPScraper received non-web source type: {config.source_type}")
 
         async with httpx.AsyncClient(
             timeout=self._timeout,

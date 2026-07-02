@@ -1,7 +1,7 @@
 """Scraper package — multi-source data collection (M3-T1).
 
 Provides:
-- BaseScraper: 抽象基类，所有采集器实现此接口
+- BaseScraper: 抽象基类,所有采集器实现此接口
 - HTTPScraper: 网页爬虫 (httpx + selectolax)
 - RSSScraper: RSS/Atom Feed 采集器 (feedparser)
 - APIScraper: REST API 采集器 (httpx)

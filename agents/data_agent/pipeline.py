@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from agents.data_agent.cleaning import CleaningPipeline
 from agents.data_agent.models import (
@@ -24,7 +23,6 @@ from agents.data_agent.models import (
     DataQualityReport,
     PipelineResult,
     SourceConfig,
-    SourceType,
 )
 from agents.data_agent.scrapers.base import ScraperRegistry, ScrapingError
 
@@ -193,9 +191,7 @@ class DataPipeline:
         uniqueness_avg = round(len(cleaned_items) / max(total, 1), 4)
 
         # Validity: average quality score
-        validity_avg = round(
-            sum(c.quality_score for c in cleaned_items) / len(cleaned_items), 4
-        )
+        validity_avg = round(sum(c.quality_score for c in cleaned_items) / len(cleaned_items), 4)
 
         return DataQualityReport(
             total_items=len(raw_items),

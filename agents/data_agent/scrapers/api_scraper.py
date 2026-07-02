@@ -54,9 +54,7 @@ class APIScraper(BaseScraper):
             ScrapingError: If API request fails.
         """
         if config.source_type != SourceType.API:
-            raise ScrapingError(
-                f"APIScraper received non-api source type: {config.source_type}"
-            )
+            raise ScrapingError(f"APIScraper received non-api source type: {config.source_type}")
 
         headers = self._build_headers(config)
 
@@ -83,7 +81,9 @@ class APIScraper(BaseScraper):
                     if items:
                         logger.warning(
                             "API fetch stopped at page %d (error: %s), returning %d items",
-                            page, e, len(items),
+                            page,
+                            e,
+                            len(items),
                         )
                         break
                     logger.error("API fetch failed for %s: %s", config.url, e)
@@ -207,12 +207,7 @@ class APIScraper(BaseScraper):
         Returns:
             CollectedItem instance.
         """
-        title = str(
-            record.get("title")
-            or record.get("name")
-            or record.get("subject")
-            or ""
-        )
+        title = str(record.get("title") or record.get("name") or record.get("subject") or "")
         content = str(
             record.get("content")
             or record.get("description")

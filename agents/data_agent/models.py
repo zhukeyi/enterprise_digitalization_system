@@ -2,8 +2,8 @@
 
 Defines:
 - SourceConfig: 采集源配置
-- CollectedItem: EXTRACT 阶段输出（原始数据）
-- CleanedItem: TRANSFORM 阶段输出（清洗后数据）
+- CollectedItem: EXTRACT 阶段输出(原始数据)
+- CleanedItem: TRANSFORM 阶段输出(清洗后数据)
 - DataQualityReport: 数据质量报告
 - PipelineResult: 流水线最终输出
 """
@@ -47,14 +47,14 @@ class SourceType(StrEnum):
 
 
 class SourceConfig(BaseModel):
-    """采集源配置 — 描述从哪里采集、如何采集。
+    """采集源配置 — 描述从哪里采集、如何采集.
 
     Attributes:
-        source_type: 数据源类型 (web/rss/api)。
-        url: 目标 URL（网页地址、RSS feed、REST API endpoint）。
-        auth_config: 认证配置（bearer_token / api_key / basic_auth）。
-        max_items: 最大采集条数。
-        headers: 自定义 HTTP 请求头。
+        source_type: 数据源类型 (web/rss/api).
+        url: 目标 URL(网页地址、RSS feed、REST API endpoint).
+        auth_config: 认证配置(bearer_token / api_key / basic_auth).
+        max_items: 最大采集条数.
+        headers: 自定义 HTTP 请求头.
     """
 
     source_type: SourceType = Field(description="Data source type")
@@ -68,19 +68,19 @@ class SourceConfig(BaseModel):
 
 
 class CollectedItem(BaseModel):
-    """采集原始数据 — EXTRACT 阶段输出。
+    """采集原始数据 — EXTRACT 阶段输出.
 
-    统一模型，不论数据源是 web/rss/api，采集结果都包装为 CollectedItem。
+    统一模型,不论数据源是 web/rss/api,采集结果都包装为 CollectedItem.
 
     Attributes:
-        id: 唯一标识。
-        source: 数据源类型。
-        source_url: 采集来源 URL。
-        title: 标题。
-        content: 正文/摘要。
-        raw_html: 原始 HTML（仅 web 采集器有值）。
-        metadata: 采集附加信息（作者、发布时间、标签等）。
-        collected_at: 采集时间。
+        id: 唯一标识.
+        source: 数据源类型.
+        source_url: 采集来源 URL.
+        title: 标题.
+        content: 正文/摘要.
+        raw_html: 原始 HTML(仅 web 采集器有值).
+        metadata: 采集附加信息(作者、发布时间、标签等).
+        collected_at: 采集时间.
     """
 
     id: str = Field(default_factory=new_uuid, description="Unique item ID")
@@ -105,20 +105,20 @@ class CollectedItem(BaseModel):
 
 
 class CleanedItem(BaseModel):
-    """清洗后数据 — TRANSFORM 阶段输出。
+    """清洗后数据 — TRANSFORM 阶段输出.
 
-    经过去重、标准化、PII 脱敏后的数据。
+    经过去重、标准化、PII 脱敏后的数据.
 
     Attributes:
-        id: 保留原始 CollectedItem 的 ID。
-        source: 数据源类型。
-        source_url: 采集来源 URL。
-        title: 标准化后的标题。
-        content: 纯文本内容（HTML 已剥离）。
-        metadata: 标准化后的元数据。
-        quality_score: 质量评分 (0.0-1.0)。
-        pii_masked: 是否进行了 PII 脱敏。
-        cleaned_at: 清洗时间。
+        id: 保留原始 CollectedItem 的 ID.
+        source: 数据源类型.
+        source_url: 采集来源 URL.
+        title: 标准化后的标题.
+        content: 纯文本内容(HTML 已剥离).
+        metadata: 标准化后的元数据.
+        quality_score: 质量评分 (0.0-1.0).
+        pii_masked: 是否进行了 PII 脱敏.
+        cleaned_at: 清洗时间.
     """
 
     id: str = Field(description="Original CollectedItem ID")
@@ -146,16 +146,16 @@ class CleanedItem(BaseModel):
 
 
 class DataQualityReport(BaseModel):
-    """数据质量报告 — LOAD 阶段副产物。
+    """数据质量报告 — LOAD 阶段副产物.
 
     Attributes:
-        total_items: 采集总数（EXTRACT 输出）。
-        valid_items: 有效数据数（TRANSFORM 后）。
-        duplicate_count: 去重数量。
-        completeness_avg: 完整性平均分 (0.0-1.0)。
-        uniqueness_avg: 唯一性平均分 (0.0-1.0)。
-        validity_avg: 有效性平均分 (0.0-1.0)。
-        pii_masked_count: PII 脱敏条数。
+        total_items: 采集总数(EXTRACT 输出).
+        valid_items: 有效数据数(TRANSFORM 后).
+        duplicate_count: 去重数量.
+        completeness_avg: 完整性平均分 (0.0-1.0).
+        uniqueness_avg: 唯一性平均分 (0.0-1.0).
+        validity_avg: 有效性平均分 (0.0-1.0).
+        pii_masked_count: PII 脱敏条数.
     """
 
     total_items: int = Field(default=0, ge=0, description="Total items collected")
@@ -188,17 +188,17 @@ class DataQualityReport(BaseModel):
 
 
 class PipelineResult(BaseModel):
-    """ETL 流水线最终输出。
+    """ETL 流水线最终输出.
 
     Attributes:
-        dataset_id: 数据集唯一标识（用于后续查询）。
-        source: 数据源类型。
-        extracted_count: EXTRACT 阶段采集数量。
-        cleaned_count: TRANSFORM 阶段清洗后数量。
-        stored_count: LOAD 阶段存储数量。
-        quality_report: 数据质量报告。
-        duration_ms: 总耗时（毫秒）。
-        errors: 错误信息列表。
+        dataset_id: 数据集唯一标识(用于后续查询).
+        source: 数据源类型.
+        extracted_count: EXTRACT 阶段采集数量.
+        cleaned_count: TRANSFORM 阶段清洗后数量.
+        stored_count: LOAD 阶段存储数量.
+        quality_report: 数据质量报告.
+        duration_ms: 总耗时(毫秒).
+        errors: 错误信息列表.
     """
 
     dataset_id: str = Field(default_factory=new_uuid, description="Dataset identifier")
