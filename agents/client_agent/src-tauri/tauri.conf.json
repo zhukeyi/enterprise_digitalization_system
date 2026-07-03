@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/.schemas/tauri.conf.json",
+  "productName": "FDE AI Assistant",
+  "version": "0.1.0",
+  "identifier": "com.fde-ai.desktop",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "FDE AI Assistant",
+        "width": 480,
+        "height": 640,
+        "resizable": true,
+        "alwaysOnTop": true,
+        "decorations": true,
+        "center": true,
+        "minWidth": 360,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:* https://217.142.246.70:*; script-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  },
+  "plugins": {
+    "global-shortcut": {
+      "shortcuts": [
+        {
+          "modifiers": ["CmdOrCtrl", "Shift"],
+          "key": "Space",
+          "handler": "toggle_window"
+        }
+      ]
+    },
+    "clipboard-manager": {
+      "readText": true,
+      "writeText": true
+    },
+    "store": {}
+  }
+}
