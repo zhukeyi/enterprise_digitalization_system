@@ -1,12 +1,11 @@
-"""Tests for WeCom adapter and IM webhook routes (M4-T1).
+"""Tests for IM adapters and webhook routes (M4-T1).
 
 Tests cover:
-- WeCom adapter send (text/markdown/image/card/file) with mocked API
-- WeCom adapter receive (callback payload parsing)
-- WeCom adapter session management
-- WeCom URL verification
+- WeCom adapter send/receive/session/verify
+- Feishu adapter send/receive/session/challenge
+- DingTalk adapter send/receive/session/webhook signature
 - Webhook routes (GET verify + POST callback)
-- Error handling (invalid credentials, API errors, network failures)
+- Error handling
 """
 
 from __future__ import annotations
@@ -15,10 +14,24 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from agents.im_agent.adapters.dingtalk_adapter import (
+    DingTalkAdapter,
+    _compute_webhook_sign,
+    create_dingtalk_adapter,
+)
+from agents.im_agent.adapters.dingtalk_adapter import (
+    _verify_callback_signature as _verify_dingtalk_sign,
+)
+from agents.im_agent.adapters.feishu_adapter import (
+    FeishuAdapter,
+    create_feishu_adapter,
+)
 from agents.im_agent.adapters.wecom_adapter import (
     WeComAdapter,
-    _verify_callback_signature,
     create_wecom_adapter,
+)
+from agents.im_agent.adapters.wecom_adapter import (
+    _verify_callback_signature as _verify_wecom_sign,
 )
 from agents.im_agent.models import (
     IMAttachment,
@@ -440,11 +453,11 @@ class TestWeComVerification:
         raw = "".join(params)
         expected = __import__("hashlib").sha1(raw.encode()).hexdigest()
 
-        assert _verify_callback_signature(token, timestamp, nonce, echostr, expected) is True
+        assert _verify_wecom_sign(token, timestamp, nonce, echostr, expected) is True
 
     def test_verify_signature_invalid(self) -> None:
         """Reject an invalid signature."""
-        assert _verify_callback_signature("t", "1", "n", "e", "wrong_sig") is False
+        assert _verify_wecom_sign("t", "1", "n", "e", "wrong_sig") is False
 
     def test_adapter_verify_url_with_token(self, adapter: WeComAdapter) -> None:
         """Verify URL returns echostr when valid (with WECOM_TOKEN set)."""
@@ -606,3 +619,342 @@ class TestSendReceiveRoundtrip:
         assert message.sender.user_id == "user_test"
         assert "1.2M" in message.content.body
         assert message.direction == MessageDirection.INBOUND
+
+
+# ══════════════════════════════════════════════════════════════════
+# Feishu Adapter Tests
+# ══════════════════════════════════════════════════════════════════
+
+
+def _feishu_handler(request: httpx.Request) -> httpx.Response:
+    """Mock Feishu API responses."""
+    url = str(request.url)
+
+    if "/auth/v3/tenant_access_token" in url:
+        return httpx.Response(
+            200,
+            json={"code": 0, "msg": "ok", "tenant_access_token": "t_feishu_abc", "expire": 7200},
+        )
+    if "/im/v1/messages" in url:
+        return httpx.Response(
+            200,
+            json={"code": 0, "msg": "ok", "data": {"message_id": "om_feishu_001"}},
+        )
+
+    return httpx.Response(200, json={"code": 0, "msg": "ok"})
+
+
+@pytest.fixture
+def feishu_adapter() -> FeishuAdapter:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_feishu_handler))
+    return FeishuAdapter(http_client=client, app_id="fei_app", app_secret="fei_sec")
+
+
+class TestFeishuSend:
+    async def test_send_text(self, feishu_adapter: FeishuAdapter) -> None:
+        resp = await feishu_adapter.send(IMSendRequest(
+            platform=Platform.FEISHU, target_id="ou_123",
+            content="Hello from Feishu", message_type=MessageType.TEXT,
+        ))
+        assert resp.success
+        assert resp.platform == Platform.FEISHU
+        assert feishu_adapter.call_count_send == 1
+
+    async def test_send_markdown(self, feishu_adapter: FeishuAdapter) -> None:
+        resp = await feishu_adapter.send(IMSendRequest(
+            platform=Platform.FEISHU, target_id="ou_456",
+            content="# Title\n**bold** text", message_type=MessageType.MARKDOWN,
+        ))
+        assert resp.success
+
+    async def test_send_card(self, feishu_adapter: FeishuAdapter) -> None:
+        resp = await feishu_adapter.send(IMSendRequest(
+            platform=Platform.FEISHU, target_id="ou_789",
+            content="Card title here", message_type=MessageType.CARD,
+        ))
+        assert resp.success
+
+    async def test_send_error(self) -> None:
+        def err_handler(request: httpx.Request) -> httpx.Response:
+            if "/auth/v3/tenant_access_token" in str(request.url):
+                return httpx.Response(200, json={"code": 0, "msg": "ok", "tenant_access_token": "tok", "expire": 7200})
+            return httpx.Response(200, json={"code": 10001, "msg": "invalid open_id"})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(err_handler))
+        adapter = FeishuAdapter(http_client=client, app_id="f", app_secret="s")
+        resp = await adapter.send(IMSendRequest(
+            platform=Platform.FEISHU, target_id="bad_id", content="x", message_type=MessageType.TEXT,
+        ))
+        assert not resp.success
+
+    async def test_network_error(self) -> None:
+        def net_err(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("timeout")
+        client = httpx.AsyncClient(transport=httpx.MockTransport(net_err))
+        adapter = FeishuAdapter(http_client=client, app_id="f", app_secret="s")
+        resp = await adapter.send(IMSendRequest(
+            platform=Platform.FEISHU, target_id="x", content="x", message_type=MessageType.TEXT,
+        ))
+        assert not resp.success
+
+
+class TestFeishuReceive:
+    async def test_receive_message_event(self, feishu_adapter: FeishuAdapter) -> None:
+        payload = {
+            "schema": "2.0",
+            "header": {"event_id": "evt_001", "event_type": "im.message.receive_v1"},
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_user1"}},
+                "message": {
+                    "message_id": "om_msg001",
+                    "message_type": "text",
+                    "content": '{"text": "Hello from feishu user"}',
+                },
+            },
+        }
+        msg = await feishu_adapter.receive(payload)
+        assert msg.platform == Platform.FEISHU
+        assert msg.direction == MessageDirection.INBOUND
+        assert "Hello from feishu user" in msg.content.body
+        assert msg.sender.user_id == "ou_user1"
+        assert feishu_adapter.call_count_receive == 1
+
+    async def test_receive_event_type(self, feishu_adapter: FeishuAdapter) -> None:
+        payload = {
+            "schema": "2.0",
+            "header": {"event_id": "evt_002"},
+            "event": {"type": "app_open", "operator": {"open_id": "ou_admin"}},
+        }
+        msg = await feishu_adapter.receive(payload)
+        assert msg.message_type == MessageType.EVENT
+        assert msg.sender.user_id == "ou_admin"
+
+    async def test_receive_post_rich_text(self, feishu_adapter: FeishuAdapter) -> None:
+        payload = {
+            "schema": "2.0",
+            "header": {"event_id": "evt_rte"},
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_rich"}},
+                "message": {
+                    "message_id": "om_rich",
+                    "message_type": "post",
+                    "content": '{"post":{"zh_cn":{"content":[[{"tag":"text","text":"line 1"}],[{"tag":"text","text":"line 2"}]]}}}',
+                },
+            },
+        }
+        msg = await feishu_adapter.receive(payload)
+        # Should parse post content - the adapter handles this
+        assert msg.message_type in (MessageType.MARKDOWN, MessageType.TEXT)
+
+
+class TestFeishuSession:
+    async def test_session_save_get(self, feishu_adapter: FeishuAdapter) -> None:
+        session = IMSession(session_id="fs_s1", user_id="u1")
+        await feishu_adapter.save_session(session)
+        retrieved = await feishu_adapter.get_session("fs_s1")
+        assert retrieved is not None
+        assert retrieved.session_id == "fs_s1"
+
+    async def test_session_not_found(self, feishu_adapter: FeishuAdapter) -> None:
+        assert await feishu_adapter.get_session("no") is None
+
+
+class TestFeishuChallenge:
+    def test_verify_challenge_valid(self) -> None:
+        import os
+        os.environ["FEISHU_VERIFICATION_TOKEN"] = "my_verify_token"
+        adapter = FeishuAdapter()
+        result = adapter.verify_challenge("my_verify_token")
+        assert result == "my_verify_token"
+
+    def test_verify_challenge_invalid(self) -> None:
+        import os
+        os.environ["FEISHU_VERIFICATION_TOKEN"] = "correct"
+        adapter = FeishuAdapter()
+        result = adapter.verify_challenge("wrong")
+        assert result is None
+
+    def test_adapter_is_configured(self, feishu_adapter: FeishuAdapter) -> None:
+        assert feishu_adapter.is_configured
+
+    def test_create_adapter(self) -> None:
+        adapter = create_feishu_adapter()
+        assert isinstance(adapter, FeishuAdapter)
+        assert adapter.platform == Platform.FEISHU
+
+
+# ══════════════════════════════════════════════════════════════════
+# DingTalk Adapter Tests
+# ══════════════════════════════════════════════════════════════════
+
+
+def _dingtalk_handler(request: httpx.Request) -> httpx.Response:
+    """Mock DingTalk API responses."""
+    url = str(request.url)
+
+    if "/gettoken" in url:
+        return httpx.Response(
+            200,
+            json={"errcode": 0, "errmsg": "ok", "access_token": "dt_tok_abc", "expires_in": 7200},
+        )
+    if "/cgi-bin/message/send" in url or "robot/send" in url:
+        return httpx.Response(200, json={"errcode": 0, "errmsg": "ok"})
+    if "/topapi/message" in url:
+        return httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "task_id": 12345})
+
+    return httpx.Response(200, json={"errcode": 0, "errmsg": "ok"})
+
+
+@pytest.fixture
+def dingtalk_adapter() -> DingTalkAdapter:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(_dingtalk_handler))
+    return DingTalkAdapter(
+        http_client=client,
+        app_key="dt_key",
+        app_secret="dt_sec",
+        webhook_url="https://oapi.dingtalk.com/robot/send?access_token=test",
+        webhook_secret="SECabc123",
+    )
+
+
+class TestDingTalkSend:
+    async def test_send_text_via_webhook(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        resp = await dingtalk_adapter.send(IMSendRequest(
+            platform=Platform.DINGTALK, target_id="user1",
+            content="DingTalk notification", message_type=MessageType.TEXT,
+        ))
+        assert resp.success
+        assert resp.platform == Platform.DINGTALK
+        assert dingtalk_adapter.call_count_send == 1
+
+    async def test_send_markdown(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        resp = await dingtalk_adapter.send(IMSendRequest(
+            platform=Platform.DINGTALK, target_id="user2",
+            content="## Title\n- item 1\n- item 2", message_type=MessageType.MARKDOWN,
+        ))
+        assert resp.success
+
+    async def test_send_card_actioncard(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        resp = await dingtalk_adapter.send(IMSendRequest(
+            platform=Platform.DINGTALK, target_id="user3",
+            content="Action card content", message_type=MessageType.CARD,
+        ))
+        assert resp.success
+
+    async def test_send_at_all(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        resp = await dingtalk_adapter.send(IMSendRequest(
+            platform=Platform.DINGTALK, target_id="@all",
+            content="@all notification", message_type=MessageType.TEXT,
+        ))
+        assert resp.success
+
+    async def test_send_error(self) -> None:
+        def err_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"errcode": 40001, "errmsg": "invalid signature"})
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(err_handler))
+        adapter = DingTalkAdapter(
+            http_client=client, webhook_url="http://test", webhook_secret="sec"
+        )
+        resp = await adapter.send(IMSendRequest(
+            platform=Platform.DINGTALK, target_id="x", content="x",
+            message_type=MessageType.TEXT,
+        ))
+        assert not resp.success
+
+
+class TestDingTalkReceive:
+    async def test_receive_text_callback(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        payload = {
+            "MsgId": "dt_msg_001",
+            "MsgType": "text",
+            "Content": "Hello from DingTalk",
+            "SenderId": "dt_user_001",
+            "SenderNick": "DingTalk User",
+            "CreateAt": "1700000000",
+        }
+        msg = await dingtalk_adapter.receive(payload)
+        assert msg.platform == Platform.DINGTALK
+        assert msg.direction == MessageDirection.INBOUND
+        assert msg.content.body == "Hello from DingTalk"
+        assert msg.sender.user_id == "dt_user_001"
+        assert msg.sender.display_name == "DingTalk User"
+        assert dingtalk_adapter.call_count_receive == 1
+
+    async def test_receive_image_callback(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        payload = {
+            "MsgId": "dt_img",
+            "MsgType": "image",
+            "PicUrl": "https://img.dingtalk.com/abc.jpg",
+            "SenderId": "dt_user_img",
+        }
+        msg = await dingtalk_adapter.receive(payload)
+        assert msg.message_type == MessageType.IMAGE
+        assert len(msg.content.attachments) == 1
+
+    async def test_receive_markdown_callback(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        payload = {
+            "MsgId": "dt_md",
+            "MsgType": "markdown",
+            "text": {"content": "**bold** text"},
+            "SenderId": "dt_user_md",
+        }
+        msg = await dingtalk_adapter.receive(payload)
+        assert msg.message_type == MessageType.MARKDOWN
+        assert "**bold**" in msg.content.body
+
+    async def test_receive_action_card(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        payload = {
+            "MsgId": "dt_card",
+            "MsgType": "actionCard",
+            "Content": "card text",
+            "SenderId": "dt_user_card",
+        }
+        msg = await dingtalk_adapter.receive(payload)
+        assert msg.message_type == MessageType.CARD
+
+
+class TestDingTalkSession:
+    async def test_session_save_get(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        session = IMSession(session_id="dt_s1", user_id="u1")
+        await dingtalk_adapter.save_session(session)
+        retrieved = await dingtalk_adapter.get_session("dt_s1")
+        assert retrieved is not None
+
+    async def test_session_not_found(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        assert await dingtalk_adapter.get_session("no") is None
+
+
+class TestDingTalkSignature:
+    def test_compute_webhook_sign(self) -> None:
+        timestamp, sign = _compute_webhook_sign("my_secret")
+        assert len(timestamp) == 13  # 13-digit millisecond timestamp
+        assert len(sign) > 0
+
+    def test_verify_callback_signature(self) -> None:
+        secret = "test_secret"
+        import base64 as _b64
+        import hashlib as _hashlib
+        import hmac as _hmac
+        ts = "1700000000123"
+        raw = f"{ts}\n{secret}"
+        hmac_code = _hmac.new(
+            secret.encode(), raw.encode(), digestmod=_hashlib.sha256
+        ).digest()
+        expected = _b64.b64encode(hmac_code).decode()
+        assert _verify_dingtalk_sign(ts, expected, secret)
+
+    def test_verify_invalid_signature(self) -> None:
+        assert _verify_dingtalk_sign("ts", "bad_sign", "secret") is False
+
+    def test_adapter_verify_callback(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        result = dingtalk_adapter.verify_callback("ts", "sign")
+        assert result is False  # Should fail with actual verification
+
+    def test_adapter_is_configured(self, dingtalk_adapter: DingTalkAdapter) -> None:
+        assert dingtalk_adapter.is_configured
+
+    def test_create_adapter(self) -> None:
+        adapter = create_dingtalk_adapter()
+        assert isinstance(adapter, DingTalkAdapter)
+        assert adapter.platform == Platform.DINGTALK
