@@ -1,0 +1,44 @@
+# FDE AI Platform — Prometheus Configuration
+# Scrapes: FDE backend, PostgreSQL, Redis, Qdrant, Node exporter
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "fde-production"
+
+# Alertmanager (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# Alert rules
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # FDE Backend
+  - job_name: "fde-backend"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["fde-backend:8000"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "fde-backend"
+
+  # PostgreSQL (via postgres_exporter if deployed)
+  # - job_name: "postgres"
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+
+  # Redis (via redis_exporter if deployed)
+  # - job_name: "redis"
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]
+
+  # Node metrics (via node_exporter if deployed)
+  # - job_name: "node"
+  #   static_configs:
+  #     - targets: ["node-exporter:9100"]

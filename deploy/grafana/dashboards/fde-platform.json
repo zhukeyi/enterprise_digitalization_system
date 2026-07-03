@@ -1,0 +1,65 @@
+{
+  "title": "FDE AI Platform",
+  "uid": "fde-platform",
+  "panels": [
+    {
+      "title": "HTTP Request Rate",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "rate(fde_http_requests_total[1m])", "legendFormat": "{{method}} {{endpoint}}"}],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps"}
+      }
+    },
+    {
+      "title": "HTTP Latency (P95)",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "histogram_quantile(0.95, rate(fde_http_request_duration_seconds_bucket[1m]))", "legendFormat": "{{endpoint}}"}],
+      "fieldConfig": {
+        "defaults": {"unit": "s"}
+      }
+    },
+    {
+      "title": "Error Rate",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+      "targets": [{"expr": "sum(rate(fde_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(fde_http_requests_total[5m])) * 100"}],
+      "fieldConfig": {"defaults": {"unit": "percent"}}
+    },
+    {
+      "title": "Active Sessions",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+      "targets": [{"expr": "fde_active_sessions"}]
+    },
+    {
+      "title": "Worker Tasks by Status",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 4},
+      "targets": [{"expr": "rate(fde_worker_tasks_total[1m])", "legendFormat": "{{worker_name}}/{{status}}"}]
+    },
+    {
+      "title": "Tool Call Distribution",
+      "type": "piechart",
+      "gridPos": {"x": 0, "y": 12, "w": 8, "h": 6},
+      "targets": [{"expr": "sum(rate(fde_tool_calls_total[5m])) by (tool_name)", "legendFormat": "{{tool_name}}"}]
+    },
+    {
+      "title": "RAG Search Latency (P95)",
+      "type": "graph",
+      "gridPos": {"x": 8, "y": 12, "w": 8, "h": 6},
+      "targets": [{"expr": "histogram_quantile(0.95, rate(fde_rag_search_duration_seconds_bucket[1m]))", "legendFormat": "{{strategy}}"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": {"x": 16, "y": 12, "w": 8, "h": 6},
+      "targets": [{"expr": "fde_process_uptime_seconds / 3600"}],
+      "fieldConfig": {"defaults": {"unit": "hours"}}
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "30s"
+}
