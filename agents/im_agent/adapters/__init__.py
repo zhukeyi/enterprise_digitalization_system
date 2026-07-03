@@ -9,6 +9,7 @@ DingTalk) must implement. Each adapter handles:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any
@@ -25,6 +26,8 @@ from agents.im_agent.models import (
     MessageDirection,
     Platform,
 )
+
+logger = logging.getLogger("fde.im.adapters")
 
 # ══════════════════════════════════════════════════════════════════
 # Abstract Base Adapter
@@ -218,12 +221,54 @@ class AdapterRegistry:
     """
 
     def __init__(self) -> None:
+        # Start with stub adapters, then try to upgrade to real ones
         self._adapters: dict[Platform, BaseIMAdapter] = {
             Platform.MOCK: MockAdapter(),
             Platform.WECOM: WeComStubAdapter(),
             Platform.FEISHU: FeishuStubAdapter(),
             Platform.DINGTALK: DingTalkStubAdapter(),
         }
+
+        # Try to upgrade to real adapters if credentials are configured
+        self._try_upgrade_wecom()
+        self._try_upgrade_feishu()
+        self._try_upgrade_dingtalk()
+
+    def _try_upgrade_wecom(self) -> None:
+        """Upgrade WeCom stub to real adapter if credentials available."""
+        try:
+            from agents.im_agent.adapters.wecom_adapter import WeComAdapter
+
+            adapter = WeComAdapter()
+            if adapter.is_configured:
+                self._adapters[Platform.WECOM] = adapter
+                logger.info("WeCom real adapter activated")
+        except Exception as e:
+            logger.debug("WeCom real adapter not available: %s", e)
+
+    def _try_upgrade_feishu(self) -> None:
+        """Upgrade Feishu stub to real adapter if credentials available."""
+        try:
+            from agents.im_agent.adapters.feishu_adapter import FeishuAdapter
+
+            adapter = FeishuAdapter()
+            if adapter.is_configured:
+                self._adapters[Platform.FEISHU] = adapter
+                logger.info("Feishu real adapter activated")
+        except Exception as e:
+            logger.debug("Feishu real adapter not available: %s", e)
+
+    def _try_upgrade_dingtalk(self) -> None:
+        """Upgrade DingTalk stub to real adapter if credentials available."""
+        try:
+            from agents.im_agent.adapters.dingtalk_adapter import DingTalkAdapter
+
+            adapter = DingTalkAdapter()
+            if adapter.is_configured:
+                self._adapters[Platform.DINGTALK] = adapter
+                logger.info("DingTalk real adapter activated")
+        except Exception as e:
+            logger.debug("DingTalk real adapter not available: %s", e)
 
     def get(self, platform: Platform) -> BaseIMAdapter:
         """Get the adapter for a specific platform.
