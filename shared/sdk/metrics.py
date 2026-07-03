@@ -43,7 +43,7 @@ class _Counter:
     def _make_key(self, label_values: dict[str, str] | None) -> tuple[str, ...]:
         if not label_values:
             return ()
-        return tuple(label_values.get(l, "") for l in self.labels)
+        return tuple(label_values.get(lbl, "") for lbl in self.labels)
 
     def _render(self) -> str:
         lines = [f"# HELP {self.name} {self.help}", f"# TYPE {self.name} counter"]
@@ -76,7 +76,7 @@ class _Histogram:
     def _make_key(self, label_values: dict[str, str] | None) -> tuple[str, ...]:
         if not label_values:
             return ()
-        return tuple(label_values.get(l, "") for l in self.labels)
+        return tuple(label_values.get(lbl, "") for lbl in self.labels)
 
     def _render(self) -> str:
         name = self.name
@@ -84,18 +84,30 @@ class _Histogram:
         for key, values in self._data.items():
             if not values:
                 continue
-            labels_str = ",".join(f'{self.labels[i]}="{key[i]}"' for i in range(len(key))) if key else ""
+            labels_str = (
+                ",".join(f'{self.labels[i]}="{key[i]}"' for i in range(len(key))) if key else ""
+            )
             total = len(values)
             total_sum = sum(values)
-            bucket_counts: dict[float, int] = {b: sum(1 for v in values if v <= b) for b in self.buckets}
+            bucket_counts: dict[float, int] = {
+                b: sum(1 for v in values if v <= b) for b in self.buckets
+            }
 
-            label_prefix = f"{name}_bucket{{{labels_str},le=" if labels_str else f"{name}_bucket{{le="
+            label_prefix = (
+                f"{name}_bucket{{{labels_str},le=" if labels_str else f"{name}_bucket{{le="
+            )
 
             for bucket in self.buckets:
                 lines.append(f'{label_prefix}"{bucket}"}} {bucket_counts[bucket]}')
             lines.append(f'{label_prefix}"+Inf"}} {total}')
-            lines.append(f"{name}_sum{{{labels_str}}} {total_sum}" if labels_str else f"{name}_sum {total_sum}")
-            lines.append(f"{name}_count{{{labels_str}}} {total}" if labels_str else f"{name}_count {total}")
+            lines.append(
+                f"{name}_sum{{{labels_str}}} {total_sum}"
+                if labels_str
+                else f"{name}_sum {total_sum}"
+            )
+            lines.append(
+                f"{name}_count{{{labels_str}}} {total}" if labels_str else f"{name}_count {total}"
+            )
         return "\n".join(lines)
 
 
@@ -116,7 +128,7 @@ class _Gauge:
     def _make_key(self, label_values: dict[str, str] | None) -> tuple[str, ...]:
         if not label_values:
             return ()
-        return tuple(label_values.get(l, "") for l in self.labels)
+        return tuple(label_values.get(lbl, "") for lbl in self.labels)
 
     def _render(self) -> str:
         lines = [f"# HELP {self.name} {self.help}", f"# TYPE {self.name} gauge"]
@@ -192,8 +204,12 @@ async def _metrics_middleware(request: Request, call_next: Callable) -> Response
     parts = path.split("/")
     normalized = "/".join(parts[:3]) if len(parts) > 3 else path
 
-    http_requests_total.inc({"method": request.method, "endpoint": normalized, "status": str(response.status_code)})
-    http_request_duration_seconds.observe(duration, {"method": request.method, "endpoint": normalized})
+    http_requests_total.inc(
+        {"method": request.method, "endpoint": normalized, "status": str(response.status_code)}
+    )
+    http_request_duration_seconds.observe(
+        duration, {"method": request.method, "endpoint": normalized}
+    )
 
     return response
 
@@ -211,8 +227,8 @@ def setup_metrics(app: FastAPI) -> None:
         lines = [_render_all_metrics()]
         # Add process uptime
         uptime = time.time() - _start_time
-        lines.append(f"# HELP fde_process_uptime_seconds Process uptime in seconds")
-        lines.append(f"# TYPE fde_process_uptime_seconds gauge")
+        lines.append("# HELP fde_process_uptime_seconds Process uptime in seconds")
+        lines.append("# TYPE fde_process_uptime_seconds gauge")
         lines.append(f"fde_process_uptime_seconds {uptime:.0f}")
 
         return Response(content="\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
@@ -223,7 +239,7 @@ def setup_metrics(app: FastAPI) -> None:
 def _render_all_metrics() -> str:
     """Render all registered metrics in Prometheus text format."""
     parts: list[str] = []
-    for name, metric in _metrics_registry.items():
+    for _name, metric in _metrics_registry.items():
         parts.append(metric._render())
     return "\n".join(parts)
 

@@ -123,7 +123,7 @@ def _verify_callback_signature(timestamp: str, sign: str, secret: str) -> bool:
         digestmod=hashlib.sha256,
     ).digest()
     expected = base64.b64encode(hmac_code).decode()
-    return sign == expected
+    return hmac.compare_digest(sign, expected)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -190,9 +190,7 @@ class DingTalkAdapter(BaseIMAdapter):
                 error=str(e),
             )
 
-    async def _send_via_webhook(
-        self, request: IMSendRequest, start_time: float
-    ) -> IMSendResponse:
+    async def _send_via_webhook(self, request: IMSendRequest, start_time: float) -> IMSendResponse:
         """Send via DingTalk robot webhook with signature."""
         if not self._webhook_secret:
             return IMSendResponse(
@@ -225,9 +223,7 @@ class DingTalkAdapter(BaseIMAdapter):
                 latency_ms=latency_ms,
             )
 
-    async def _send_via_api(
-        self, request: IMSendRequest, start_time: float
-    ) -> IMSendResponse:
+    async def _send_via_api(self, request: IMSendRequest, start_time: float) -> IMSendResponse:
         """Send via DingTalk API (corp conversation)."""
         token = await _get_access_token(self._client)
 
@@ -373,7 +369,8 @@ class DingTalkAdapter(BaseIMAdapter):
     def verify_callback(self, timestamp: str, sign: str) -> bool:
         """Verify DingTalk callback signature."""
         if not self._webhook_secret:
-            return True  # No secret = accept all (dev mode)
+            logger.warning("DingTalk webhook secret not configured — rejecting callback")
+            return False
         return _verify_callback_signature(timestamp, sign, self._webhook_secret)
 
     # ══════════════════════════════════════════════════════════════
@@ -382,7 +379,9 @@ class DingTalkAdapter(BaseIMAdapter):
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._app_key and self._app_secret) or bool(self._webhook_url and self._webhook_secret)
+        return bool(self._app_key and self._app_secret) or bool(
+            self._webhook_url and self._webhook_secret
+        )
 
     @property
     def call_count_send(self) -> int:

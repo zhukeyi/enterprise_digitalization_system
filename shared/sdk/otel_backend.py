@@ -52,18 +52,34 @@ class OTelBackend:
             self._log_stdout(trace_id, span_id, name, duration_ms, status, attrs)
 
     def _log_stdout(
-        self, trace_id: str, span_id: str, name: str,
-        duration_ms: float, status: str, attrs: dict[str, Any],
+        self,
+        trace_id: str,
+        span_id: str,
+        name: str,
+        duration_ms: float,
+        status: str,
+        attrs: dict[str, Any],
     ) -> None:
         """Log span to structured stdout (dev mode)."""
         logger.info(
             "trace_id=%s span_id=%s name=%s duration=%.2fms status=%s attrs=%s",
-            trace_id, span_id, name, duration_ms, status, json.dumps(attrs, default=str),
+            trace_id,
+            span_id,
+            name,
+            duration_ms,
+            status,
+            json.dumps(attrs, default=str),
         )
 
     def _export_otlp(
-        self, trace_id: str, span_id: str, name: str,
-        start_time: float, duration_ms: float, status: str, attrs: dict[str, Any],
+        self,
+        trace_id: str,
+        span_id: str,
+        name: str,
+        start_time: float,
+        duration_ms: float,
+        status: str,
+        attrs: dict[str, Any],
     ) -> None:
         """Export span to OTLP HTTP collector (best-effort, non-blocking)."""
         try:
@@ -71,28 +87,39 @@ class OTelBackend:
 
             # OTLP/HTTP JSON format
             payload = {
-                "resourceSpans": [{
-                    "resource": {
-                        "attributes": [
-                            {"key": "service.name", "value": {"stringValue": self.service_name}},
-                        ]
-                    },
-                    "scopeSpans": [{
-                        "scope": {"name": "fde-ai-platform", "version": "0.1.0"},
-                        "spans": [{
-                            "traceId": trace_id,
-                            "spanId": span_id,
-                            "name": name,
-                            "startTimeUnixNano": str(int(start_time * 1e9)),
-                            "endTimeUnixNano": str(int((start_time + duration_ms / 1000) * 1e9)),
-                            "status": {"code": 1 if status == "ok" else 2},
+                "resourceSpans": [
+                    {
+                        "resource": {
                             "attributes": [
-                                {"key": k, "value": {"stringValue": str(v)}}
-                                for k, v in attrs.items()
-                            ],
-                        }],
-                    }],
-                }],
+                                {
+                                    "key": "service.name",
+                                    "value": {"stringValue": self.service_name},
+                                },
+                            ]
+                        },
+                        "scopeSpans": [
+                            {
+                                "scope": {"name": "fde-ai-platform", "version": "0.1.0"},
+                                "spans": [
+                                    {
+                                        "traceId": trace_id,
+                                        "spanId": span_id,
+                                        "name": name,
+                                        "startTimeUnixNano": str(int(start_time * 1e9)),
+                                        "endTimeUnixNano": str(
+                                            int((start_time + duration_ms / 1000) * 1e9)
+                                        ),
+                                        "status": {"code": 1 if status == "ok" else 2},
+                                        "attributes": [
+                                            {"key": k, "value": {"stringValue": str(v)}}
+                                            for k, v in attrs.items()
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
             }
 
             data = json.dumps(payload).encode()
@@ -132,8 +159,13 @@ class OTelBackend:
         if self._langfuse_enabled:
             logger.debug("langfuse_event: %s", json.dumps(event, default=str))
         else:
-            logger.info("llm_call model=%s tokens=%d/%d duration=%.0fms",
-                        model, prompt_tokens, completion_tokens, duration_ms)
+            logger.info(
+                "llm_call model=%s tokens=%d/%d duration=%.0fms",
+                model,
+                prompt_tokens,
+                completion_tokens,
+                duration_ms,
+            )
 
     @property
     def span_count(self) -> int:

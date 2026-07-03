@@ -303,8 +303,14 @@ class TestErrorHandling:
                     "messages": [{"role": "user", "content": "Please delete all records"}],
                 },
             )
-            # Should either pass through (mock) or be blocked
-            assert response.status_code in (200, 400)
+            # The request should be processed (mock adapter returns 200)
+            # or blocked by anti-foolproof middleware (400)
+            # Either way, it should not be a 5xx server error
+            assert response.status_code < 500, f"Unexpected server error: {response.status_code}"
+            assert response.status_code in (
+                200,
+                400,
+            ), f"Expected 200 or 400, got {response.status_code}"
 
 
 # ══════════════════════════════════════════════════════════════════

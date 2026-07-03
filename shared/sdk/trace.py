@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
+import contextvars
 import time
 import uuid
 from typing import Any
 
-__all__ = ["TraceContext", "get_trace_id", "sanitize_pii"]
+__all__ = ["TraceContext", "get_current_trace", "get_trace_id", "sanitize_pii"]
 
 _TRACE_ID_HEADER = "X-Trace-Id"
 _PII_PATTERNS = {"email", "phone", "password", "secret", "token", "api_key", "ssn"}
 
+# ContextVar for async-safe trace context propagation
+_current_trace: contextvars.ContextVar[TraceContext | None] = contextvars.ContextVar(
+    "_current_trace", default=None
+)
+
 
 class TraceContext:
-    """Thread-local trace context with automatic span management."""
+    """Async-safe trace context using contextvars for propagation across tasks."""
 
     def __init__(self, trace_id: str | None = None) -> None:
         self.trace_id: str = trace_id or str(uuid.uuid4())
@@ -39,6 +45,18 @@ class TraceContext:
                 if metadata:
                     span["output"] = sanitize_pii(metadata)
                 break
+
+    def __enter__(self) -> TraceContext:
+        _current_trace.set(self)
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        _current_trace.set(None)
+
+
+def get_current_trace() -> TraceContext | None:
+    """Get the current trace context from contextvars."""
+    return _current_trace.get()
 
 
 def get_trace_id(headers: dict[str, str] | None = None) -> str:

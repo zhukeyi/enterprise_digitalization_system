@@ -367,10 +367,11 @@ class NL2SQLEngine:
                 return str(int(num))
             return str(num)
 
-        # Try string value in quotes
+        # Try string value in quotes — escape single quotes to prevent SQL injection
         match = re.search(r"['\"]([^'\"]+)['\"]", text)
         if match:
-            return f"'{match.group(1)}'"
+            escaped = match.group(1).replace("'", "''")
+            return f"'{escaped}'"
 
         return None
 

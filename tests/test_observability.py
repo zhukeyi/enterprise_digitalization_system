@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from shared.sdk.metrics import (
     _render_all_metrics,
-    active_sessions,
     http_request_duration_seconds,
     http_requests_total,
-    rag_search_duration_seconds,
     record_rag_search,
     record_tool_call,
     record_worker_task,
     set_active_sessions,
     setup_metrics,
-    tool_calls_total,
-    worker_tasks_total,
 )
 
 
@@ -120,7 +115,7 @@ class TestMetricsEndpoint:
 
 class TestOTelBackend:
     def test_backend_disabled_by_default(self) -> None:
-        from shared.sdk.otel_backend import OTelBackend, get_default_backend, set_default_backend
+        from shared.sdk.otel_backend import OTelBackend
 
         backend = OTelBackend()
         assert backend.span_count == 0
@@ -131,6 +126,7 @@ class TestOTelBackend:
 
     def test_backend_enabled(self) -> None:
         import os
+
         from shared.sdk.otel_backend import OTelBackend
 
         os.environ["FDE_OTEL_ENABLED"] = "1"
@@ -143,20 +139,19 @@ class TestOTelBackend:
 
     def test_llm_call_emission(self) -> None:
         import os
+
         from shared.sdk.otel_backend import OTelBackend
 
         os.environ["FDE_OTEL_ENABLED"] = "1"
         try:
             backend = OTelBackend()
-            backend.emit_llm_call(
-                "trace3", "gpt-4", 100, 50, 1500.0, "Hello", "Hi there!"
-            )
+            backend.emit_llm_call("trace3", "gpt-4", 100, 50, 1500.0, "Hello", "Hi there!")
             # Should not raise
         finally:
             os.environ["FDE_OTEL_ENABLED"] = "0"
 
     def test_singleton_pattern(self) -> None:
-        from shared.sdk.otel_backend import get_default_backend, set_default_backend
+        from shared.sdk.otel_backend import get_default_backend
 
         b1 = get_default_backend()
         b2 = get_default_backend()
@@ -174,12 +169,11 @@ class TestStructuredLogging:
     def test_json_formatter(self) -> None:
         import json
         import logging
+
         from shared.sdk.logging import JSONFormatter
 
         formatter = JSONFormatter()
-        record = logging.LogRecord(
-            "test", logging.INFO, "path", 42, "test message", (), None
-        )
+        record = logging.LogRecord("test", logging.INFO, "path", 42, "test message", (), None)
 
         output = formatter.format(record)
         parsed = json.loads(output)
@@ -192,6 +186,7 @@ class TestStructuredLogging:
     def test_json_formatter_with_exception(self) -> None:
         import json
         import logging
+
         from shared.sdk.logging import JSONFormatter
 
         formatter = JSONFormatter()

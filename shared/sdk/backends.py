@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -12,12 +13,18 @@ __all__ = [
     "register_backend",
 ]
 
+logger = logging.getLogger("fde.sdk.backends")
+
 
 def _log_trace(name: str, status: str, latency_ms: float) -> None:
-    """Stub: writes trace to stdout. Replace with Langfuse in production."""
-    level = "WARN" if "error" in status else "INFO"
+    """Log a trace span using structured logging. Replace with Langfuse in production."""
     trace_id = os.environ.get("TRACE_ID", "local")
-    print(f"[{level}] trace={trace_id} span={name} status={status} latency={latency_ms:.1f}ms")
+    if "error" in status:
+        logger.warning(
+            "trace=%s span=%s status=%s latency=%.1fms", trace_id, name, status, latency_ms
+        )
+    else:
+        logger.info("trace=%s span=%s status=%s latency=%.1fms", trace_id, name, status, latency_ms)
 
 
 # ── Backend Registration (to be wired later) ──────────────────────

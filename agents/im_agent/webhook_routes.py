@@ -135,7 +135,9 @@ async def receive_callback(
             raw_payload = dict(json_data)
         elif "xml" in content_type or "text/xml" in content_type:
             body = await request.body()
-            logger.warning("XML body received for %s (len=%d), using raw parse", platform, len(body))
+            logger.warning(
+                "XML body received for %s (len=%d), using raw parse", platform, len(body)
+            )
             raw_payload = {"raw_xml": body.decode("utf-8", errors="replace"), "platform": platform}
         else:
             # Try JSON first, then raw
@@ -144,7 +146,10 @@ async def receive_callback(
                 json_data = await request.json()
                 raw_payload = dict(json_data)
             except Exception:
-                raw_payload = {"raw_body": body.decode("utf-8", errors="replace"), "platform": platform}
+                raw_payload = {
+                    "raw_body": body.decode("utf-8", errors="replace"),
+                    "platform": platform,
+                }
 
         # Process through adapter
         message = await adapter.receive(raw_payload)
@@ -161,6 +166,6 @@ async def receive_callback(
 
     except KeyError:
         raise HTTPException(status_code=500, detail=f"{platform} adapter not registered")
-    except Exception as e:
-        logger.exception("Failed to process %s callback: %s", platform, e)
-        return {"status": "error", "detail": str(e)}
+    except Exception:
+        logger.exception("Failed to process %s callback", platform)
+        return {"status": "error", "detail": "Internal processing error"}

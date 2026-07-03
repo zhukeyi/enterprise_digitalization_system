@@ -10,6 +10,7 @@ API 文档: https://open.feishu.cn/document/server-docs/im-v1/message/create
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import time
@@ -77,8 +78,7 @@ async def _get_tenant_access_token(http_client: httpx.AsyncClient) -> str:
 
     if data.get("code") != 0:
         raise RuntimeError(
-            f"Feishu get token failed: code={data.get('code')} "
-            f"msg={data.get('msg')}"
+            f"Feishu get token failed: code={data.get('code')} " f"msg={data.get('msg')}"
         )
 
     token: str = data["tenant_access_token"]
@@ -99,8 +99,8 @@ def _verify_event_challenge(token: str, challenge: str) -> str | None:
 
     Returns the challenge string if token matches the request token, None otherwise.
     """
-    # token here is the expected token (from env), challenge is from Feishu
-    if token == challenge:
+    # Use constant-time comparison to prevent timing attacks
+    if hmac.compare_digest(token, challenge):
         return challenge
     logger.warning("Feishu event challenge verification failed")
     return None
@@ -204,28 +204,34 @@ class FeishuAdapter(BaseIMAdapter):
         elif request.message_type == MessageType.MARKDOWN:
             # Feishu uses "interactive" instead of "markdown"
             body["msg_type"] = "interactive"
-            body["content"] = json.dumps({
-                "config": {"wide_screen_mode": True},
-                "elements": [{
-                    "tag": "markdown",
-                    "content": content,
-                }],
-                "header": {
-                    "title": {"tag": "plain_text", "content": "FDE AI Assistant"},
-                },
-            })
+            body["content"] = json.dumps(
+                {
+                    "config": {"wide_screen_mode": True},
+                    "elements": [
+                        {
+                            "tag": "markdown",
+                            "content": content,
+                        }
+                    ],
+                    "header": {
+                        "title": {"tag": "plain_text", "content": "FDE AI Assistant"},
+                    },
+                }
+            )
         elif request.message_type == MessageType.IMAGE:
             body["msg_type"] = "image"
             image_key = request.attachments[0].url if request.attachments else content
             body["content"] = json.dumps({"image_key": image_key})
         elif request.message_type == MessageType.CARD:
             body["msg_type"] = "interactive"
-            body["content"] = json.dumps({
-                "header": {
-                    "title": {"tag": "plain_text", "content": content[:128]},
-                },
-                "elements": [],
-            })
+            body["content"] = json.dumps(
+                {
+                    "header": {
+                        "title": {"tag": "plain_text", "content": content[:128]},
+                    },
+                    "elements": [],
+                }
+            )
         elif request.message_type == MessageType.FILE:
             body["msg_type"] = "file"
             file_key = request.attachments[0].url if request.attachments else content
@@ -276,7 +282,9 @@ class FeishuAdapter(BaseIMAdapter):
             raw_payload=raw_payload,
         )
 
-    def _parse_message_event(self, event: dict[str, Any], msg_id: str, raw_payload: dict[str, Any]) -> IMMessage:
+    def _parse_message_event(
+        self, event: dict[str, Any], msg_id: str, raw_payload: dict[str, Any]
+    ) -> IMMessage:
         """Parse a Feishu message event."""
         sender_info = event.get("sender", {}).get("sender_id", {})
         user_id = (
@@ -291,7 +299,9 @@ class FeishuAdapter(BaseIMAdapter):
 
         # Parse content JSON
         try:
-            content_obj = json.loads(content_json) if isinstance(content_json, str) else content_json
+            content_obj = (
+                json.loads(content_json) if isinstance(content_json, str) else content_json
+            )
         except (json.JSONDecodeError, TypeError):
             content_obj = {"text": str(content_json)}
 
@@ -377,8 +387,8 @@ class FeishuAdapter(BaseIMAdapter):
         """
         verify_token = os.environ.get("FEISHU_VERIFICATION_TOKEN", "")
         if not verify_token:
-            logger.warning("FEISHU_VERIFICATION_TOKEN not set, accepting challenge")
-            return challenge
+            logger.warning("FEISHU_VERIFICATION_TOKEN not set, rejecting challenge")
+            return None
 
         return _verify_event_challenge(verify_token, challenge)
 

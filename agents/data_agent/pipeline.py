@@ -139,7 +139,11 @@ class DataPipeline:
         )
 
     async def _extract(self, config: SourceConfig) -> list[CollectedItem]:
-        """Route to the correct scraper and fetch data.
+        """Route to the correct scraper and fetch data (internal, delegates to extract)."""
+        return await self.extract(config)
+
+    async def extract(self, config: SourceConfig) -> list[CollectedItem]:
+        """Public extract API — route to the correct scraper and fetch data.
 
         Args:
             config: Source configuration.

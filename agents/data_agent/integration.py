@@ -62,7 +62,7 @@ async def _data_collect_handler(
 
     try:
         pipeline = DataPipeline()
-        raw_items = await pipeline._extract(config)
+        raw_items = await pipeline.extract(config)
     except (ValueError, RuntimeError, OSError) as e:
         logger.error("data_collect failed: %s", e)
         return {"error": str(e), "source_type": source_type, "query": query}

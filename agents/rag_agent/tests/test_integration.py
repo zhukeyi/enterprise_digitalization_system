@@ -114,9 +114,11 @@ class TestRAGIntegration:
 
             mock_chunk.return_value = [MagicMock()]
 
-            result = _rag_ingest_handler(
-                documents=[{"path": "/test/doc.pdf", "format": "pdf"}],
-                collection_name="test_collection",
+            result = asyncio.run(
+                _rag_ingest_handler(
+                    documents=[{"path": "/test/doc.pdf", "format": "pdf"}],
+                    collection_name="test_collection",
+                )
             )
             assert result["collection"] == "test_collection"
             assert result["ingested"] == 1
@@ -126,8 +128,10 @@ class TestRAGIntegration:
         with patch("agents.rag_agent.integration.VectorStore") as mock_store_cls:
             mock_store_cls.return_value.create_collection.side_effect = RuntimeError("Store failed")
 
-            result = _rag_ingest_handler(
-                documents=[{"path": "/test/doc.pdf", "format": "pdf"}],
+            result = asyncio.run(
+                _rag_ingest_handler(
+                    documents=[{"path": "/test/doc.pdf", "format": "pdf"}],
+                )
             )
             assert "error" in result
 

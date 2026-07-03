@@ -10,8 +10,6 @@ Covers M1+M2+M3+M4 full pipeline acceptance:
 
 from __future__ import annotations
 
-import pytest
-
 from agents.im_agent.adapters.wecom_adapter import WeComAdapter
 from agents.im_agent.models import (
     IMSendRequest,
@@ -26,8 +24,9 @@ class TestM4E2EAuth:
     def test_public_health_endpoint(self) -> None:
         """Health endpoint is publicly accessible without auth."""
         # The health endpoint is listed in _is_public_path
-        from agents.router_agent.main import app
         from fastapi.testclient import TestClient
+
+        from agents.router_agent.main import app
 
         client = TestClient(app)
         response = client.get("/health")
@@ -35,38 +34,58 @@ class TestM4E2EAuth:
 
     def test_authenticated_endpoint(self) -> None:
         """Protected endpoint exists and handles auth."""
-        from agents.router_agent.main import app
+
         from fastapi.testclient import TestClient
 
+        from agents.router_agent.main import app
+
+        # With default FDE_ENABLE_AUTH=0, auth is bypassed — request should succeed
         client = TestClient(app)
         response = client.post(
             "/v1/chat/completions",
             json={"model": "fde", "messages": [{"role": "user", "content": "hello"}]},
             headers={"Authorization": "Bearer invalid_token"},
         )
-        # With FDE_ENABLE_AUTH=0 (default), auth is bypassed
-        # With FDE_ENABLE_AUTH=1, invalid tokens return 401/403
-        # Either outcome is acceptable for E2E
-        assert response.status_code in (200, 401, 403)
+        # Auth disabled by default, so should get 200 (or 400 for invalid model)
+        assert response.status_code in (
+            200,
+            400,
+        ), f"Expected 200 or 400 with auth disabled, got {response.status_code}: {response.text}"
 
 
 class TestM4E2EIM:
     """E2E: IM send + receive round-trip."""
 
     async def test_im_wecom_send_receive_roundtrip(self) -> None:
-        """Send WeCom message and parse reply callback."""
+        """Verify WeCom adapter model construction and receive parsing."""
         adapter = WeComAdapter()
 
-        # Send
+        # Build a send request to verify model construction
         send_req = IMSendRequest(
             platform=Platform.WECOM,
             target_id="user_e2e",
             content="E2E test message",
             message_type=MessageType.TEXT,
         )
-        # The adapter send requires HTTP, which may not have auth in test
-        # But the receive should work standalone
-        assert adapter.is_configured is False  # No real creds in test
+        assert send_req.platform == Platform.WECOM
+        assert send_req.content == "E2E test message"
+        assert send_req.message_type == MessageType.TEXT
+
+        # Verify adapter is not configured without real creds
+        assert adapter.is_configured is False
+
+        # Parse a simulated callback payload
+        payload = {
+            "ToUserName": "corp",
+            "FromUserName": "user_e2e",
+            "MsgType": "text",
+            "Content": "E2E callback message",
+            "MsgId": "12345",
+            "CreateTime": "1700000000",
+        }
+        message = await adapter.receive(payload)
+        assert message.message_type == MessageType.TEXT
+        assert message.content.body == "E2E callback message"
 
     async def test_im_wecom_receive_callback(self) -> None:
         """Parse WeCom callback payload."""
@@ -91,6 +110,7 @@ class TestM4E2EMetrics:
         """Metrics endpoint is registered and returns Prometheus format."""
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from shared.sdk.metrics import setup_metrics
 
         app = FastAPI()
@@ -133,8 +153,8 @@ class TestM4E2ENL2SQL:
         from agents.analysis_agent.sql_safety import SQLSafetyValidator
 
         validator = SQLSafetyValidator()
-        # Check that validator exists and can handle DROP
-        assert validator is not None
+        result = validator.validate("DROP TABLE users")
+        assert result.is_safe is False
 
 
 class TestM4E2EWebhookRoutes:
@@ -142,9 +162,10 @@ class TestM4E2EWebhookRoutes:
 
     def test_wecom_webhook_endpoint(self) -> None:
         """WeCom webhook GET returns verification response."""
-        from agents.im_agent.webhook_routes import router
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
+        from agents.im_agent.webhook_routes import router
 
         app = FastAPI()
         app.include_router(router)
@@ -155,9 +176,10 @@ class TestM4E2EWebhookRoutes:
 
     def test_feishu_webhook_endpoint(self) -> None:
         """Feishu webhook POST receives callbacks."""
-        from agents.im_agent.webhook_routes import router
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
+        from agents.im_agent.webhook_routes import router
 
         app = FastAPI()
         app.include_router(router)

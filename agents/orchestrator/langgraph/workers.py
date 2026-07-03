@@ -91,15 +91,7 @@ class BaseWorker:
                 "error": None,
             }
 
-        except (
-            RuntimeError,
-            ValueError,
-            TypeError,
-            KeyError,
-            AttributeError,
-            ConnectionError,
-            OSError,
-        ) as e:
+        except Exception as e:
             logger.error("Worker '%s' failed: %s", self.name, e)
             return {
                 "worker_outputs": {self.name: f"Error: {e}"},
@@ -111,10 +103,23 @@ class BaseWorker:
         """Dispatch a tool, running async handlers synchronously.
 
         ToolRegistry.dispatch() is async; this wraps it for sync callers.
+        Uses a safe event loop strategy: reuses existing loop if available,
+        otherwise creates a new one via asyncio.run().
         """
-
         coro = self.tool_registry.dispatch(tool_name, **kwargs)
-        return asyncio.run(coro)
+        try:
+            asyncio.get_running_loop()
+            # If we're already in an async context, schedule the coroutine
+            # on the existing loop via a thread to avoid "cannot run from
+            # a running event loop" errors
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(asyncio.run, coro)
+                return future.result()
+        except RuntimeError:
+            # No running loop — safe to use asyncio.run directly
+            return asyncio.run(coro)
 
     def execute(self, step: Any, state: OrchestratorState) -> Any:
         """Execute the worker's task. Must be overridden by subclasses.

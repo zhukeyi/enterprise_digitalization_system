@@ -63,7 +63,12 @@ def _mock_handler(request: httpx.Request) -> httpx.Response:
     if "/cgi-bin/gettoken" in url:
         return httpx.Response(
             200,
-            json={"errcode": 0, "errmsg": "ok", "access_token": "test_token_abc123", "expires_in": 7200},
+            json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "access_token": "test_token_abc123",
+                "expires_in": 7200,
+            },
         )
 
     # message/send
@@ -171,7 +176,9 @@ class TestWeComSend:
             target_id="user111",
             content="media_id_xxx",
             message_type=MessageType.IMAGE,
-            attachments=[IMAttachment(name="image.png", url="media_id_xxx", content_type="image/png")],
+            attachments=[
+                IMAttachment(name="image.png", url="media_id_xxx", content_type="image/png")
+            ],
         )
 
         response = await adapter.send(request)
@@ -186,7 +193,9 @@ class TestWeComSend:
             content="media_id_file_001",
             message_type=MessageType.FILE,
             attachments=[
-                IMAttachment(name="report.pdf", url="media_id_file_001", content_type="application/pdf")
+                IMAttachment(
+                    name="report.pdf", url="media_id_file_001", content_type="application/pdf"
+                )
             ],
         )
 
@@ -203,7 +212,10 @@ class TestWeComSendErrors:
 
         def error_handler(request: httpx.Request) -> httpx.Response:
             if "/cgi-bin/gettoken" in str(request.url):
-                return httpx.Response(200, json={"errcode": 0, "errmsg": "ok", "access_token": "tok", "expires_in": 7200})
+                return httpx.Response(
+                    200,
+                    json={"errcode": 0, "errmsg": "ok", "access_token": "tok", "expires_in": 7200},
+                )
             return httpx.Response(200, json={"errcode": 40003, "errmsg": "invalid touser"})
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(error_handler))
@@ -652,49 +664,74 @@ def feishu_adapter() -> FeishuAdapter:
 
 class TestFeishuSend:
     async def test_send_text(self, feishu_adapter: FeishuAdapter) -> None:
-        resp = await feishu_adapter.send(IMSendRequest(
-            platform=Platform.FEISHU, target_id="ou_123",
-            content="Hello from Feishu", message_type=MessageType.TEXT,
-        ))
+        resp = await feishu_adapter.send(
+            IMSendRequest(
+                platform=Platform.FEISHU,
+                target_id="ou_123",
+                content="Hello from Feishu",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert resp.success
         assert resp.platform == Platform.FEISHU
         assert feishu_adapter.call_count_send == 1
 
     async def test_send_markdown(self, feishu_adapter: FeishuAdapter) -> None:
-        resp = await feishu_adapter.send(IMSendRequest(
-            platform=Platform.FEISHU, target_id="ou_456",
-            content="# Title\n**bold** text", message_type=MessageType.MARKDOWN,
-        ))
+        resp = await feishu_adapter.send(
+            IMSendRequest(
+                platform=Platform.FEISHU,
+                target_id="ou_456",
+                content="# Title\n**bold** text",
+                message_type=MessageType.MARKDOWN,
+            )
+        )
         assert resp.success
 
     async def test_send_card(self, feishu_adapter: FeishuAdapter) -> None:
-        resp = await feishu_adapter.send(IMSendRequest(
-            platform=Platform.FEISHU, target_id="ou_789",
-            content="Card title here", message_type=MessageType.CARD,
-        ))
+        resp = await feishu_adapter.send(
+            IMSendRequest(
+                platform=Platform.FEISHU,
+                target_id="ou_789",
+                content="Card title here",
+                message_type=MessageType.CARD,
+            )
+        )
         assert resp.success
 
     async def test_send_error(self) -> None:
         def err_handler(request: httpx.Request) -> httpx.Response:
             if "/auth/v3/tenant_access_token" in str(request.url):
-                return httpx.Response(200, json={"code": 0, "msg": "ok", "tenant_access_token": "tok", "expire": 7200})
+                return httpx.Response(
+                    200, json={"code": 0, "msg": "ok", "tenant_access_token": "tok", "expire": 7200}
+                )
             return httpx.Response(200, json={"code": 10001, "msg": "invalid open_id"})
 
         client = httpx.AsyncClient(transport=httpx.MockTransport(err_handler))
         adapter = FeishuAdapter(http_client=client, app_id="f", app_secret="s")
-        resp = await adapter.send(IMSendRequest(
-            platform=Platform.FEISHU, target_id="bad_id", content="x", message_type=MessageType.TEXT,
-        ))
+        resp = await adapter.send(
+            IMSendRequest(
+                platform=Platform.FEISHU,
+                target_id="bad_id",
+                content="x",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert not resp.success
 
     async def test_network_error(self) -> None:
         def net_err(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("timeout")
+
         client = httpx.AsyncClient(transport=httpx.MockTransport(net_err))
         adapter = FeishuAdapter(http_client=client, app_id="f", app_secret="s")
-        resp = await adapter.send(IMSendRequest(
-            platform=Platform.FEISHU, target_id="x", content="x", message_type=MessageType.TEXT,
-        ))
+        resp = await adapter.send(
+            IMSendRequest(
+                platform=Platform.FEISHU,
+                target_id="x",
+                content="x",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert not resp.success
 
 
@@ -762,6 +799,7 @@ class TestFeishuSession:
 class TestFeishuChallenge:
     def test_verify_challenge_valid(self) -> None:
         import os
+
         os.environ["FEISHU_VERIFICATION_TOKEN"] = "my_verify_token"
         adapter = FeishuAdapter()
         result = adapter.verify_challenge("my_verify_token")
@@ -769,6 +807,7 @@ class TestFeishuChallenge:
 
     def test_verify_challenge_invalid(self) -> None:
         import os
+
         os.environ["FEISHU_VERIFICATION_TOKEN"] = "correct"
         adapter = FeishuAdapter()
         result = adapter.verify_challenge("wrong")
@@ -819,33 +858,49 @@ def dingtalk_adapter() -> DingTalkAdapter:
 
 class TestDingTalkSend:
     async def test_send_text_via_webhook(self, dingtalk_adapter: DingTalkAdapter) -> None:
-        resp = await dingtalk_adapter.send(IMSendRequest(
-            platform=Platform.DINGTALK, target_id="user1",
-            content="DingTalk notification", message_type=MessageType.TEXT,
-        ))
+        resp = await dingtalk_adapter.send(
+            IMSendRequest(
+                platform=Platform.DINGTALK,
+                target_id="user1",
+                content="DingTalk notification",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert resp.success
         assert resp.platform == Platform.DINGTALK
         assert dingtalk_adapter.call_count_send == 1
 
     async def test_send_markdown(self, dingtalk_adapter: DingTalkAdapter) -> None:
-        resp = await dingtalk_adapter.send(IMSendRequest(
-            platform=Platform.DINGTALK, target_id="user2",
-            content="## Title\n- item 1\n- item 2", message_type=MessageType.MARKDOWN,
-        ))
+        resp = await dingtalk_adapter.send(
+            IMSendRequest(
+                platform=Platform.DINGTALK,
+                target_id="user2",
+                content="## Title\n- item 1\n- item 2",
+                message_type=MessageType.MARKDOWN,
+            )
+        )
         assert resp.success
 
     async def test_send_card_actioncard(self, dingtalk_adapter: DingTalkAdapter) -> None:
-        resp = await dingtalk_adapter.send(IMSendRequest(
-            platform=Platform.DINGTALK, target_id="user3",
-            content="Action card content", message_type=MessageType.CARD,
-        ))
+        resp = await dingtalk_adapter.send(
+            IMSendRequest(
+                platform=Platform.DINGTALK,
+                target_id="user3",
+                content="Action card content",
+                message_type=MessageType.CARD,
+            )
+        )
         assert resp.success
 
     async def test_send_at_all(self, dingtalk_adapter: DingTalkAdapter) -> None:
-        resp = await dingtalk_adapter.send(IMSendRequest(
-            platform=Platform.DINGTALK, target_id="@all",
-            content="@all notification", message_type=MessageType.TEXT,
-        ))
+        resp = await dingtalk_adapter.send(
+            IMSendRequest(
+                platform=Platform.DINGTALK,
+                target_id="@all",
+                content="@all notification",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert resp.success
 
     async def test_send_error(self) -> None:
@@ -856,10 +911,14 @@ class TestDingTalkSend:
         adapter = DingTalkAdapter(
             http_client=client, webhook_url="http://test", webhook_secret="sec"
         )
-        resp = await adapter.send(IMSendRequest(
-            platform=Platform.DINGTALK, target_id="x", content="x",
-            message_type=MessageType.TEXT,
-        ))
+        resp = await adapter.send(
+            IMSendRequest(
+                platform=Platform.DINGTALK,
+                target_id="x",
+                content="x",
+                message_type=MessageType.TEXT,
+            )
+        )
         assert not resp.success
 
 
@@ -936,11 +995,10 @@ class TestDingTalkSignature:
         import base64 as _b64
         import hashlib as _hashlib
         import hmac as _hmac
+
         ts = "1700000000123"
         raw = f"{ts}\n{secret}"
-        hmac_code = _hmac.new(
-            secret.encode(), raw.encode(), digestmod=_hashlib.sha256
-        ).digest()
+        hmac_code = _hmac.new(secret.encode(), raw.encode(), digestmod=_hashlib.sha256).digest()
         expected = _b64.b64encode(hmac_code).decode()
         assert _verify_dingtalk_sign(ts, expected, secret)
 

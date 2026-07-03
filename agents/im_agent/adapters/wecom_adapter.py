@@ -11,6 +11,7 @@ API 文档: https://developer.work.weixin.qq.com/document/path/90236
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import time
@@ -81,8 +82,7 @@ async def _get_access_token(http_client: httpx.AsyncClient) -> str:
 
     if data.get("errcode") != 0:
         raise RuntimeError(
-            f"WeCom gettoken failed: errcode={data.get('errcode')} "
-            f"errmsg={data.get('errmsg')}"
+            f"WeCom gettoken failed: errcode={data.get('errcode')} " f"errmsg={data.get('errmsg')}"
         )
 
     token: str = data["access_token"]
@@ -109,7 +109,7 @@ def _verify_callback_signature(
     params = sorted([token, timestamp, nonce, echostr])
     raw = "".join(params)
     computed = hashlib.sha1(raw.encode()).hexdigest()
-    return computed == msg_signature
+    return hmac.compare_digest(computed, msg_signature)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -239,7 +239,9 @@ class WeComAdapter(BaseIMAdapter):
             body["markdown"] = {"content": content}
         elif request.message_type == MessageType.IMAGE:
             # Image: media_id from uploaded media
-            body["image"] = {"media_id": request.attachments[0].url if request.attachments else content}
+            body["image"] = {
+                "media_id": request.attachments[0].url if request.attachments else content
+            }
         elif request.message_type == MessageType.CARD:
             # Textcard: title + description + URL
             body["textcard"] = {
@@ -248,7 +250,9 @@ class WeComAdapter(BaseIMAdapter):
                 "url": request.reply_to or "",
             }
         elif request.message_type == MessageType.FILE:
-            body["file"] = {"media_id": request.attachments[0].url if request.attachments else content}
+            body["file"] = {
+                "media_id": request.attachments[0].url if request.attachments else content
+            }
         else:
             # Default to text
             body["msgtype"] = "text"

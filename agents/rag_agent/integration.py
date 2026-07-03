@@ -13,6 +13,7 @@ M1-T4: RAGFlow migration to LangGraph
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -186,7 +187,7 @@ async def _rag_answer_handler(
     }
 
 
-def _rag_ingest_handler(
+async def _rag_ingest_handler(
     documents: list[dict[str, Any]],
     collection_name: str = "fde_knowledge",
 ) -> dict[str, Any]:
@@ -199,6 +200,14 @@ def _rag_ingest_handler(
     Returns:
         Dictionary with ingestion results.
     """
+    return await asyncio.to_thread(_rag_ingest_sync, documents, collection_name)
+
+
+def _rag_ingest_sync(
+    documents: list[dict[str, Any]],
+    collection_name: str = "fde_knowledge",
+) -> dict[str, Any]:
+    """Synchronous implementation of RAG ingest (offloaded to thread)."""
     try:
         vector_store = _get_vector_store()
 
