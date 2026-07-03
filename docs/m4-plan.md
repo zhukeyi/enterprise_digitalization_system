@@ -1,8 +1,9 @@
 # M4 详细拆分与执行计划
 
-> 创建时间：2026-07-03  
+> 创建时间：2026-07-03 | 修改时间：2026-07-03（solo 版本）  
 > 里程碑：M4 — 交付与收尾（第7-8月）  
 > 计划总量：52 人天  
+> 执行模式：**WorkBuddy 单 Agent 串行执行**  
 > 前置状态：M1-M3 全部完成，697 tests passed，commit b160403  
 > 参考文档：docs/v2-plan-analysis.md 阶段4, docs/m1-m2-architecture-audit.md P1遗留问题
 
@@ -14,6 +15,7 @@
 |------|------|
 | **任务数** | 7 个（M4-T1 ~ M4-T7） |
 | **人天** | 52 人天 |
+| **执行者** | WorkBuddy（单 Agent） |
 | **涉及模块** | im_agent, client_agent, deploy/, .github/, shared/sdk/, 测试服务器 |
 | **性质** | 交付收尾：补全 Stub → 真实对接、补全缺失的运维基础设施、安全加固、验收文档 |
 | **核心交付** | IM 真实对接 + Tauri 客户端 + 生产级运维 + 可观测底座 + 验收 |
@@ -27,27 +29,28 @@
 ### 依赖关系图
 
 ```
-                          M4-T4 (可观测底座)
-                         /                \
-        M4-T1 (IM真实对接)                  M4-T5 (CI/CD补全)
-                         \                /
-                          M4-T6 (M3审计 + E2E)
-                               |
-                          M4-T7 (生产部署 + 安全加固 + 交付)
-
-        M4-T2 (Tauri客户端) —— 独立，与 T1/T3/T4/T5 并行
-        M4-T3 (生产Docker编排) —— 独立，与 T1/T2 并行
+M4-T1 (IM 对接, 12d)
+    │
+    ▼
+M4-T2 (Tauri 客户端, 12d) ─── 独立模块，无代码交叉
+    │
+    ▼
+M4-T3 (Docker 编排, 5d)  ─── 基础设施层
+    │
+    ▼
+M4-T4 (可观测底座, 8d)   ─── 依赖 T3 的服务定义
+    │
+    ▼
+M4-T5 (CI/CD 补全, 7d)   ─── 依赖 T3/T4
+    │
+    ▼
+M4-T6 (M3 审计+E2E, 4d)  ─── 依赖 T1-T5 全部完成
+    │
+    ▼
+M4-T7 (生产部署+交付, 4d) ─── 依赖 T6
 ```
 
-### 并行开发策略
-
-| 并行组 | 任务 | 可并行原因 |
-|--------|------|-----------|
-| 组 A | M4-T1 (IM 对接) | 独立模块, im_agent/ 目录 |
-| 组 B | M4-T2 (Tauri 客户端) | 独立项目, client_agent/ + 新 Tauri 项目 |
-| 组 C | M4-T3 (Docker 编排) + T4 (可观测) + T5 (CI/CD) | deploy/ + .github/ + shared/sdk/, 全部独立 |
-| 串行 | M4-T6 (审计/E2E) | 依赖全部完成 |
-| 串行 | M4-T7 (部署/交付) | 依赖 T6 |
+> T1 和 T2 任务内容独立，可互换顺序。T1 先做是因为企微适配器已有完整的 ABC 框架，上手快。
 
 ---
 
@@ -70,24 +73,6 @@ agents/im_agent/
 └── tests/             # 31 tests (✅ MockAdapter 覆盖)
 ```
 
-待对接的适配器：
-
-```python
-class WeComAdapter(BaseIMAdapter):
-    platform = Platform.WECOM
-    async def send(self, request): ...     # → 企微应用消息 API
-    async def receive(self, raw): ...      # → 企微回调解密
-    async def get_session(self, sid): ...  # → 会话管理
-
-class FeishuAdapter(BaseIMAdapter):
-    platform = Platform.FEISHU
-    # 同上, 对接飞书开放平台 API
-
-class DingTalkAdapter(BaseIMAdapter):
-    platform = Platform.DINGTALK
-    # 同上, 对接钉钉开放平台 API
-```
-
 #### 子任务拆分
 
 | 子任务 | 内容 | 人天 | 产出文件 |
@@ -97,14 +82,6 @@ class DingTalkAdapter(BaseIMAdapter):
 | T1-3 | 钉钉适配器完整实现 | 3 | `im_agent/adapters/dingtalk_adapter.py` — 钉钉机器人 API + 回调 |
 | T1-4 | Webhook 路由 + 回调端点 | 1 | `im_agent/webhook_routes.py` — FastAPI 统一回调端点 `/im/webhook/{platform}` |
 | T1-5 | 集成测试 + API mock 测试 | 1 | `tests/test_im_real.py` — 用 httpx mock API 响应验证适配器行为 |
-
-#### 技术决策
-
-- **企微优先**：国内企业 IM 市场占有率最高，先做深再做广
-- **API Mock 测试**：不依赖真实 API Key，用 `responses`/`httpx.MockTransport` 模拟
-- **加密**：企微 AES-CBC 解密复用 `cryptography` 库（已在 shared/utils/crypto.py 中）
-- **HATEOAS**：回调端点返回 `platform_verify_url` 供平台配置
-- **配置**：各平台 API Key/Secret 从环境变量读取（`WECOM_CORP_ID`, `FEISHU_APP_ID` 等）
 
 #### 验收标准
 
@@ -123,15 +100,6 @@ class DingTalkAdapter(BaseIMAdapter):
 **目标**：构建 macOS 原生桌面 AI 助手，支持全局快捷键唤起 + 文本捕获 + AI 回填  
 **参考**：agents/client_agent/TODO.md (T-1~T-6 详细待办)
 
-#### 当前代码状态
-
-```
-agents/client_agent/
-├── models.py    # 16 个 Pydantic 模型 + 5 个 StrEnum (✅ 完整)
-├── auth.py      # DesktopAuthManager (JWT + 原子文件缓存, ✅ 完整)
-└── tests/       # 17 tests (✅)
-```
-
 #### 子任务拆分
 
 | 子任务 | 内容 | 人天 | 产出文件 |
@@ -142,17 +110,6 @@ agents/client_agent/
 | T2-4 | 窗口管理 + 系统托盘 + 设置面板 | 2 | `src/components/` — 悬浮窗 + 托盘菜单 + 设置页 |
 | T2-5 | 打包与签名 (macOS dmg) | 1 | `scripts/build.sh` — `tauri build + codesign + create-dmg` |
 | T2-6 | 测试 + CI 构建流水线 | 2 | `tests/` + `.github/workflows/tauri-ci.yml` — macOS runner 构建 |
-
-#### 技术决策
-
-- **框架**：Tauri 2.x（Rust 后端 + WebView 前端，比 Electron 轻量 10x）
-- **前端**：Vue 3 + Vite（与现有 map-ai 技术栈一致）
-- **认证**：复用 Python SDK 的 JWT 流程，Tauri 侧用 Rust `reqwest` 调用
-- **快捷键**：`tauri-plugin-global-shortcut`
-- **文本捕获**：macOS Accessibility API (AXUIElement) — 需要辅助功能权限
-- **剪贴板**：`tauri-plugin-clipboard-manager`
-- **安全存储**：`tauri-plugin-store` → OS Keychain
-- **只做 macOS**：M4 阶段先完成 macOS, Windows 作为后续迭代 (M4-T2-6 的 CI 中预留 Windows runner，但不阻塞交付）
 
 #### 验收标准
 
@@ -193,14 +150,6 @@ agents/client_agent/
 | nginx | Let's Encrypt HTTPS, HSTS, CSP, X-Frame-Options |
 | certbot | 自动续期 cron, 证书卷共享 |
 
-#### 验收标准
-
-- `docker compose -f deploy/docker-compose.prod.yml up -d` 一键启动
-- 所有容器健康检查通过
-- HTTPS 自动获取 Let's Encrypt 证书
-- 资源限制生效（`docker stats` 验证）
-- 日志 JSON 格式 + 自动轮转（max-size 50m, max-file 3）
-
 ---
 
 ### M4-T4: 可观测底座补全（Prometheus + Grafana + Loki + OTel）（8 人天）
@@ -240,14 +189,6 @@ agents/client_agent/
 | RAGLatencySpike | `rate(fde_rag_search_duration_seconds_bucket{le="1"}[5m]) < 0.9` | warning |
 | DatabaseConnectionPool | `fde_db_connections_active > 180` | warning |
 
-#### 验收标准
-
-- Prometheus 可抓取 FastAPI `/metrics` 端点
-- Grafana 仪表板展示 5+ 面板（QPS/latency/error/worker/sessions）
-- Loki 可查询结构化日志（trace_id 关联）
-- OTel traces 导出到 OTLP collector
-- 5 条告警规则可触发 + Alertmanager 通知
-
 ---
 
 ### M4-T5: CI/CD 补全（Helm Charts + 自动部署流水线）（7 人天）
@@ -280,21 +221,6 @@ templates/
 └── service-monitor.yaml       # Prometheus Operator ServiceMonitor
 ```
 
-#### CI/CD 流水线设计
-
-```
-Git Push (main)
-  ├── CI: lint → type-check → test (已有)
-  └── CD (新增):
-       ├── Build Docker images (backend + frontend)
-       ├── Push to GHCR (ghcr.io/zhukeyi/fde-*)
-       ├── Helm lint + template validation
-       └── Deploy (手动触发, 可选 auto-deploy on tag)
-
-Git Tag (v*)
-  └── CD: build → push → deploy to staging → smoke test → promote to production
-```
-
 #### 验收标准
 
 - `helm install fde ./deploy/helm/fde-platform` 可部署到 K8s
@@ -308,7 +234,7 @@ Git Tag (v*)
 ### M4-T6: M3 架构审计 + 全平台 E2E 验收测试（4 人天）
 
 **所属模块**：全局  
-**前置**：M4-T1 ~ T5 基本完成  
+**前置**：M4-T1 ~ T5 全部完成  
 **目标**：对 M3 全部交付物做架构合规性审计 + 全链路 E2E 验收测试  
 **参考**：docs/m1-m2-architecture-audit.md（审计模板）
 
@@ -372,19 +298,6 @@ Git Tag (v*)
 | T7-3 | 运维操作手册 | 1 | `docs/operations/runbook.md` — 启动/停止/备份/恢复/扩容 |
 | T7-4 | 架构文档补全 + Release Notes | 1 | `docs/architecture.md` + `CHANGELOG.md` v1.0.0 |
 
-#### 安全加固检查清单
-
-- [ ] OWASP ZAP 基础扫描（或 nikto）
-- [ ] Python 依赖漏洞扫描 (`pip-audit` / `safety`)
-- [ ] npm 依赖漏洞审计 (`npm audit`)
-- [ ] Secret 扫描 (`detect-secrets` / `trufflehog`)
-- [ ] JWT 密钥强度验证 (≥256-bit)
-- [ ] CORS 配置最小化（不允许 `*`）
-- [ ] CSP 头配置（script-src 'self'）
-- [ ] Rate limiting 配置 (FastAPI slowapi)
-- [ ] 数据库连接加密 (SSL/TLS)
-- [ ] 日志无 PII 泄漏检查
-
 #### 运维操作手册内容
 
 ```
@@ -411,38 +324,29 @@ docs/operations/runbook.md:
 
 ## 三、执行顺序与排期
 
-### 推荐执行顺序（2 个 Sprint）
+### 串行执行计划（WorkBuddy 单 Agent）
 
 ```
-Sprint 1 (并行启动 3 组, Day 1-15):
-├── 组A: M4-T1 (IM对接, 12d)
-├── 组B: M4-T2 (Tauri客户端, 12d)
-└── 组C: M4-T3 (Docker编排, 5d) → M4-T4 (可观测, 8d) → M4-T5 (CI/CD, 7d)
+顺序 1: M4-T1 (IM 适配器, 12d)      — 最成熟的补全任务，已有完整 ABC 框架
+顺序 2: M4-T2 (Tauri 客户端, 12d)    — 独立模块，无代码交叉
+顺序 3: M4-T3 (Docker 编排, 5d)      — 基础设施层开始
+顺序 4: M4-T4 (可观测底座, 8d)       — 依赖 T3 的服务定义
+顺序 5: M4-T5 (CI/CD 补全, 7d)       — 依赖 T3/T4
+顺序 6: M4-T6 (M3 审计+E2E, 4d)     — 依赖 T1-T5 全部完成
+顺序 7: M4-T7 (生产部署+交付, 4d)    — 依赖 T6
 
-Sprint 2 (串行收尾, Day 15-20):
-├── M4-T6 (审计+E2E, 4d) ← 依赖 T1-T5 完成
-└── M4-T7 (部署+交付, 4d) ← 依赖 T6
-
-总工期: ~20 天 (3 组并行压缩)
+总工期: 52 天（串行）
 ```
 
-### 关键路径
+### 时间线
 
 ```
-M4-T1 (IM 12d) ─┐
-                 ├──→ M4-T6 (审计 4d) → M4-T7 (交付 4d) = 最长 20d
-M4-T4 (可观测 8d)┘
+Day  1──────12──────24────29─────37─────44────48─────52
+     │  T1     │  T2   │ T3 │  T4   │  T5  │ T6 │ T7 │
+     │  IM适配  │ Tauri │ DC │ 可观测 │ CI/CD│审计│交付│
 ```
 
-### 按 Agent 分配
-
-| Agent | 任务 | 人天 | 占比 |
-|-------|------|------|------|
-| WorkBuddy (主) | T1 企微适配器 + T3 Docker编排 + T6 审计/E2E + T7 部署/交付 | 25d | 48% |
-| Trae (辅助) | T1 飞书/钉钉适配器 + T2 Tauri 客户端 + T4 可观测 + T5 CI/CD | 27d | 52% |
-
-> 注：M4 不需要评审 Agent（Qoder），因为 M4 是交付收尾阶段，不新增复杂架构逻辑。
-> WorkBuddy 自行做架构审计 T6 即可。
+> T1 和 T2 各 12d 是最重的两个任务，其余 5 个任务（29d）较为轻量。
 
 ---
 
@@ -507,7 +411,7 @@ npm audit --production         # 前端依赖无高危漏洞
 | Let's Encrypt 证书获取失败 | 中 | T3 HTTPS 不可用 | 自签名证书作为 fallback, 端口 8443 |
 | Helm Chart 在客户 K8s 版本不兼容 | 低 | T5 部署失败 | 使用 K8s 1.25+ 稳定 API, 避免 beta |
 | 可观测底座资源消耗过大 | 中 | 测试服务器 OOM | Prometheus 保留策略 7d, Loki 保留策略 3d |
-| pip-audit 报大量已知漏洞 | 低 | T7 安全扫描不通过 | 升级依赖到最新安全版本, 记录已知无影响漏洞 |
+| 单 Agent 52d 上下文过长 | 中 | 后期质量下降 | 每个任务完成后写精炼摘要, 每 2 周开新会话 |
 
 ---
 
@@ -517,26 +421,26 @@ M4 完成后应交付：
 
 ### 代码交付
 
-- [x] IM 适配器（企微/飞书/钉钉）完整实现 + 测试
-- [x] Tauri macOS 桌面客户端源码 + 构建脚本
-- [x] 生产 Docker Compose 编排文件
-- [x] Prometheus + Grafana + Loki 配置
-- [x] OTel exporter 真实实现
-- [x] Helm Charts
-- [x] CI/CD deploy workflow
-- [x] 数据库迁移脚本 (Alembic)
+- [ ] IM 适配器（企微/飞书/钉钉）完整实现 + 测试
+- [ ] Tauri macOS 桌面客户端源码 + 构建脚本
+- [ ] 生产 Docker Compose 编排文件
+- [ ] Prometheus + Grafana + Loki 配置
+- [ ] OTel exporter 真实实现
+- [ ] Helm Charts
+- [ ] CI/CD deploy workflow
+- [ ] 数据库迁移脚本 (Alembic)
 
 ### 文档交付
 
-- [x] `docs/m3-architecture-audit.md` — M3 架构审计报告
-- [x] `docs/operations/runbook.md` — 运维操作手册
-- [x] `docs/architecture.md` — 系统架构文档
-- [x] `CHANGELOG.md` — 版本变更记录
-- [x] GitHub Release v1.0.0
+- [ ] `docs/m3-architecture-audit.md` — M3 架构审计报告
+- [ ] `docs/operations/runbook.md` — 运维操作手册
+- [ ] `docs/architecture.md` — 系统架构文档
+- [ ] `CHANGELOG.md` — 版本变更记录
+- [ ] GitHub Release v1.0.0
 
 ### 运行交付
 
-- [x] 生产部署到测试服务器
-- [x] HTTPS 可访问（Let's Encrypt 或自签名）
-- [x] Grafana 仪表板可访问
-- [x] macOS dmg 安装包
+- [ ] 生产部署到测试服务器
+- [ ] HTTPS 可访问（Let's Encrypt 或自签名）
+- [ ] Grafana 仪表板可访问
+- [ ] macOS dmg 安装包
