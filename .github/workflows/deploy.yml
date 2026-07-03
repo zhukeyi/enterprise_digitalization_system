@@ -1,0 +1,139 @@
+# FDE AI Platform — CD Deployment Pipeline
+# Triggered on: tag push (v*), manual workflow_dispatch
+
+name: Deploy
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Build & Push ──────────────────────────────────────────────
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    outputs:
+      backend_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/fde-backend
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build frontend
+        run: |
+          cd frontend/map-ai
+          npm ci
+          npm run build
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend/map-ai
+          file: frontend/map-ai/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/fde-frontend:${{ steps.meta.outputs.version }}
+
+  # ── Helm Lint ─────────────────────────────────────────────────
+  lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Helm lint
+        uses: helm/chart-testing-action@v2
+        with:
+          command: lint
+          config: deploy/helm/ct.yaml 2>/dev/null || true
+
+  # ── Deploy to Staging ─────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [build, lint]
+    if: github.ref_type == 'tag' || inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy to staging
+        run: |
+          helm upgrade --install fde-platform ./deploy/helm/fde-platform \
+            --namespace fde-staging --create-namespace \
+            --set global.imageRegistry=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            --set backend.image.tag=${{ needs.build.outputs.backend_tag }} \
+            --set backend.secrets.jwtSecretKey=${{ secrets.STAGING_JWT_SECRET }} \
+            --set backend.secrets.databaseUrl=${{ secrets.STAGING_DATABASE_URL }} \
+            --wait --timeout 5m
+
+      - name: Smoke test
+        run: |
+          sleep 10
+          kubectl port-forward -n fde-staging svc/fde-platform-backend 8000:8000 &
+          sleep 5
+          curl -f http://localhost:8000/health || exit 1
+
+  # ── Deploy to Production ──────────────────────────────────────
+  deploy-production:
+    name: Deploy to Production
+    needs: [deploy-staging]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy to production
+        run: |
+          helm upgrade --install fde-platform ./deploy/helm/fde-platform \
+            --namespace fde-production --create-namespace \
+            --set global.imageRegistry=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }} \
+            --set backend.image.tag=${{ needs.build.outputs.backend_tag }} \
+            --set backend.replicaCount=3 \
+            --set backend.secrets.jwtSecretKey=${{ secrets.PROD_JWT_SECRET }} \
+            --set backend.secrets.databaseUrl=${{ secrets.PROD_DATABASE_URL }} \
+            --wait --timeout 10m

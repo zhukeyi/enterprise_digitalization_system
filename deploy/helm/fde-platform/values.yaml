@@ -1,0 +1,122 @@
+# FDE AI Platform — Helm Values
+
+# ── Global ─────────────────────────────────────────────────────
+global:
+  imageRegistry: ghcr.io/zhukeyi
+  imagePullSecrets: []
+  environment: production
+
+# ── Backend ────────────────────────────────────────────────────
+backend:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: fde-backend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  env:
+    FDE_ENV: production
+    FDE_ENABLE_AUTH: "1"
+    FDE_OTEL_ENABLED: "1"
+  secrets:
+    jwtSecretKey: ""
+    databaseUrl: ""
+  healthCheck:
+    path: /health
+    initialDelaySeconds: 30
+
+# ── Frontend ───────────────────────────────────────────────────
+frontend:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fde-frontend
+    tag: latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    limits:
+      memory: "256Mi"
+      cpu: "500m"
+    requests:
+      memory: "64Mi"
+      cpu: "100m"
+
+# ── PostgreSQL ─────────────────────────────────────────────────
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  persistence:
+    enabled: true
+    size: 20Gi
+  env:
+    POSTGRES_USER: fde
+    POSTGRES_DB: fde_platform
+  secrets:
+    POSTGRES_PASSWORD: ""
+
+# ── Redis ──────────────────────────────────────────────────────
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+  persistence:
+    enabled: true
+    size: 5Gi
+  secrets:
+    REDIS_PASSWORD: ""
+
+# ── Qdrant ─────────────────────────────────────────────────────
+qdrant:
+  enabled: true
+  image:
+    repository: qdrant/qdrant
+    tag: v1.13.4
+  persistence:
+    enabled: true
+    size: 50Gi
+  env:
+    QDRANT__SERVICE__GRPC_PORT: "6334"
+
+# ── Ingress ────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: fde.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fde-tls
+      hosts:
+        - fde.example.com
+
+# ── Monitoring ─────────────────────────────────────────────────
+monitoring:
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+  serviceMonitor:
+    enabled: false
