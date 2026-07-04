@@ -77,6 +77,7 @@ def fetch_entities(state: NodeState) -> NodeState:
 
     # If frontend provided inline entity data, use it directly
     if provided:
+        logger.info("Using %d inline entities from frontend", len(provided))
         state["entities"] = [
             GeoEntity(
                 entity_id=str(e.get("id", "")),
