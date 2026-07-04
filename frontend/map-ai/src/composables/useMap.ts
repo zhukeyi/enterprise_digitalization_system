@@ -74,7 +74,6 @@ async function loadBMap(): Promise<any> {
       if (++attempts > 50) { clearInterval(interval); reject(new Error('BMapGL 未定义，可能百度地图脚本加载失败')) }
     }, 200)
   })
-  })
   return _bmapPromise
 }
 
