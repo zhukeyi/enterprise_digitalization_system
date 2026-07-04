@@ -22,6 +22,8 @@ __all__ = [
     "CleanedItem",
     "CollectedItem",
     "DataQualityReport",
+    "GEORiskReport",
+    "GeoFlag",
     "PipelineResult",
     "SourceConfig",
     "SourceType",
@@ -145,6 +147,41 @@ class CleanedItem(BaseModel):
 # ══════════════════════════════════════════════════════════════════
 
 
+class GEORiskReport(BaseModel):
+    """GEO 污染风险评估 — 检测 AI 生成内容、信源不可信、提示注入等.
+
+    Attributes:
+        geo_score: 综合 GEO 污染风险 (0.0=真实, 1.0=高风险).
+        ai_generated_score: AI 生成文本可能性 (0.0-1.0).
+        credibility_score: 信源可信度 (1.0=高可信, 0.0=不可信).
+        prompt_injection_detected: 是否检测到隐藏提示注入.
+        cross_source_verified: 是否通过多源交叉验证.
+        flags: 触发标记列表 (e.g. "ai_pattern", "keyword_stuffing", "fake_citation").
+    """
+
+    geo_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    ai_generated_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    credibility_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    prompt_injection_detected: bool = False
+    cross_source_verified: bool = False
+    flags: list[str] = Field(default_factory=list)
+
+
+class GeoFlag(StrEnum):
+    """GEO 污染标记类型."""
+
+    AI_PATTERN = "ai_pattern"
+    SENTENCE_UNIFORMITY = "sentence_uniformity"
+    FAKE_CITATION = "fake_citation"
+    KEYWORD_STUFFING = "keyword_stuffing"
+    PROMPT_INJECTION = "prompt_injection"
+    CONTENT_FARM = "content_farm"
+    LOW_CREDIBILITY = "low_credibility"
+    CITATION_LAUNDERING = "citation_laundering"
+    AUTO_TRANSLATED = "auto_translated"
+    SYNCHRONIZED_CONTENT = "synchronized_content"
+
+
 class DataQualityReport(BaseModel):
     """数据质量报告 — LOAD 阶段副产物.
 
@@ -156,6 +193,9 @@ class DataQualityReport(BaseModel):
         uniqueness_avg: 唯一性平均分 (0.0-1.0).
         validity_avg: 有效性平均分 (0.0-1.0).
         pii_masked_count: PII 脱敏条数.
+        geo_risk_items: GEO 高风险条目数.
+        avg_geo_score: 平均 GEO 污染风险 (0.0-1.0).
+        geo_flagged_count: 被标记的条目数.
     """
 
     total_items: int = Field(default=0, ge=0, description="Total items collected")
@@ -180,6 +220,9 @@ class DataQualityReport(BaseModel):
         description="Average validity score",
     )
     pii_masked_count: int = Field(default=0, ge=0, description="Items with PII masked")
+    geo_risk_items: int = Field(default=0, ge=0, description="Items with high GEO risk")
+    avg_geo_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Average GEO risk score")
+    geo_flagged_count: int = Field(default=0, ge=0, description="Items flagged for GEO concerns")
 
 
 # ══════════════════════════════════════════════════════════════════

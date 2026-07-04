@@ -1,10 +1,11 @@
 """Data cleaning pipeline — TRANSFORM stage (M3-T1).
 
-Four-step cleaning pipeline:
+Five-step cleaning pipeline:
   1. Dedup (content hash)
   2. Normalize (strip HTML, trim, field mapping)
   3. PII masking (phone, email, ID card)
-  4. Quality scoring (completeness + length + validity)
+  4. GEO risk assessment (AI text, fake citations, prompt injection, etc.)
+  5. Quality scoring (completeness + length + validity + GEO penalty)
 
 Each step is a pure method, independently testable.
 """
@@ -15,12 +16,16 @@ import logging
 import re
 from typing import Any
 
-from agents.data_agent.models import CleanedItem, CollectedItem
+from agents.data_agent.geo_guard import GEOGuard
+from agents.data_agent.models import CleanedItem, CollectedItem, GEORiskReport
 from shared.utils.hashing import hash_content
 
 logger = logging.getLogger("fde.data.cleaning")
 
-__all__ = ["CleaningPipeline"]
+__all__ = ["GEO_GUARD_PENALTY_WEIGHT", "CleaningPipeline"]
+
+# GEO penalty weight: how much GEO score reduces quality score (0-1)
+GEO_GUARD_PENALTY_WEIGHT = 0.4
 
 # ══════════════════════════════════════════════════════════════════
 # PII Masking Patterns
@@ -145,18 +150,22 @@ def _assess_quality(title: str, content: str, metadata: dict[str, Any]) -> float
 
 
 class CleaningPipeline:
-    """Data cleaning pipeline — dedup → normalize → PII mask → quality score.
+    """Data cleaning pipeline — dedup → normalize → PII mask → GEO assess → quality score.
 
     Usage:
         pipeline = CleaningPipeline()
         cleaned = pipeline.run(raw_items)
         print(pipeline.duplicate_count)
+        print(pipeline.geo_flagged_count)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, geo_guard: GEOGuard | None = None) -> None:
         self._seen_hashes: set[str] = set()
         self._duplicate_count: int = 0
         self._pii_masked_count: int = 0
+        self._geo_flagged_count: int = 0
+        self._geo_reports: dict[str, GEORiskReport] = {}
+        self._geo_guard = geo_guard or GEOGuard()
 
     @property
     def duplicate_count(self) -> int:
@@ -167,6 +176,11 @@ class CleaningPipeline:
     def pii_masked_count(self) -> int:
         """Number of items with PII masked during the last run."""
         return self._pii_masked_count
+
+    @property
+    def geo_flagged_count(self) -> int:
+        """Number of items flagged for GEO pollution during the last run."""
+        return self._geo_flagged_count
 
     def run(self, items: list[CollectedItem]) -> list[CleanedItem]:
         """Execute the full cleaning pipeline.
@@ -180,6 +194,8 @@ class CleaningPipeline:
         self._seen_hashes.clear()
         self._duplicate_count = 0
         self._pii_masked_count = 0
+        self._geo_flagged_count = 0
+        self._geo_reports.clear()
 
         cleaned: list[CleanedItem] = []
 
@@ -198,10 +214,24 @@ class CleaningPipeline:
             if item_pii_masked:
                 self._pii_masked_count += 1
 
-            # Step 4: Quality scoring
+            # Step 4: Quality scoring (with GEO penalty)
             quality_score = _assess_quality(title, content, metadata)
+
+            # Step 5: GEO risk assessment + quality penalty
+            geo_report = self._geo_guard.assess(item)
+            self._geo_reports[item.id] = geo_report
+            if geo_report.geo_score >= self._geo_guard.threshold:
+                self._geo_flagged_count += 1
+                # Apply GEO penalty: high GEO score reduces quality score
+                quality_score *= 1.0 - (geo_report.geo_score * GEO_GUARD_PENALTY_WEIGHT)
+
             if quality_score < _MIN_QUALITY_THRESHOLD:
-                logger.warning("Item %s quality too low (%.2f), skipping", item.id, quality_score)
+                logger.warning(
+                    "Item %s quality too low (%.2f, GEO: %.2f), skipping",
+                    item.id,
+                    quality_score,
+                    geo_report.geo_score,
+                )
                 continue
 
             cleaned.append(
@@ -212,17 +242,18 @@ class CleaningPipeline:
                     title=title,
                     content=content,
                     metadata=metadata,
-                    quality_score=quality_score,
+                    quality_score=round(quality_score, 4),
                     pii_masked=item_pii_masked,
                 )
             )
 
         logger.info(
-            "CleaningPipeline: %d input → %d output (duplicates: %d, low quality dropped: %d)",
+            "CleaningPipeline: %d input → %d output (dupes: %d, low quality: %d, GEO flagged: %d)",
             len(items),
             len(cleaned),
             self._duplicate_count,
             len(items) - len(cleaned) - self._duplicate_count,
+            self._geo_flagged_count,
         )
         return cleaned
 

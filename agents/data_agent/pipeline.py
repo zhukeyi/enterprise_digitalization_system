@@ -111,10 +111,11 @@ class DataPipeline:
         cleaning = CleaningPipeline()
         cleaned_items = cleaning.run(raw_items)
         logger.info(
-            "TRANSFORM: %d → %d (duplicates: %d)",
+            "TRANSFORM: %d → %d (dupes: %d, GEO flagged: %d)",
             len(raw_items),
             len(cleaned_items),
             cleaning.duplicate_count,
+            cleaning.geo_flagged_count,
         )
 
         # ── STAGE 3: LOAD ─────────────────────────────────
@@ -171,7 +172,7 @@ class DataPipeline:
             cleaning: The CleaningPipeline instance (for stats).
 
         Returns:
-            DataQualityReport with completeness, uniqueness, validity scores.
+            DataQualityReport with completeness, uniqueness, validity, and GEO scores.
         """
         if not cleaned_items:
             return DataQualityReport(
@@ -182,20 +183,26 @@ class DataPipeline:
                 uniqueness_avg=0.0,
                 validity_avg=0.0,
                 pii_masked_count=0,
+                geo_risk_items=0,
+                avg_geo_score=0.0,
+                geo_flagged_count=cleaning.geo_flagged_count,
             )
 
         total = len(raw_items) if raw_items else 1
 
-        # Completeness: fraction of cleaned items with non-empty title and content
         completeness_avg = round(
             sum(1 for c in cleaned_items if c.title and c.content) / len(cleaned_items), 4
         )
 
-        # Uniqueness: cleaned / raw ratio
         uniqueness_avg = round(len(cleaned_items) / max(total, 1), 4)
 
-        # Validity: average quality score
         validity_avg = round(sum(c.quality_score for c in cleaned_items) / len(cleaned_items), 4)
+
+        # GEO metrics
+        geo_reports = cleaning._geo_reports
+        geo_scores = [r.geo_score for r in geo_reports.values()]
+        high_risk = sum(1 for s in geo_scores if s >= cleaning._geo_guard.threshold)
+        avg_geo = round(sum(geo_scores) / len(geo_scores), 4) if geo_scores else 0.0
 
         return DataQualityReport(
             total_items=len(raw_items),
@@ -205,4 +212,7 @@ class DataPipeline:
             uniqueness_avg=uniqueness_avg,
             validity_avg=validity_avg,
             pii_masked_count=cleaning.pii_masked_count,
+            geo_risk_items=high_risk,
+            avg_geo_score=avg_geo,
+            geo_flagged_count=cleaning.geo_flagged_count,
         )
