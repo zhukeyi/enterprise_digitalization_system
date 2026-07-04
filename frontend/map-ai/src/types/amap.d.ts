@@ -31,9 +31,7 @@ declare namespace AMap {
 
   class TileLayer {
     constructor()
-  }
-  class TileLayer.Satellite {
-    constructor()
+    static Satellite: { new(): TileLayer }
   }
 
   class Marker {
