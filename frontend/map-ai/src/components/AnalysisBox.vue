@@ -53,28 +53,28 @@ async function submitAnalysis() {
   analysisStore.setAnalyzing(true)
   try {
     const apiBase = import.meta.env.VITE_API_URL || '/fde-api'
-    const resp = await fetch(`${apiBase}/api/analysis/correlate`, {
+    const resp = await fetch(`${apiBase}/map/analysis`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        entities: analysisStore.markedEntities.map(e => ({
-          id: e.id, name: e.name, type: e.type,
-          lng: e.lng, lat: e.lat, metadata: e.metadata,
-        })),
+        entity_ids: analysisStore.entityIds,
+        method: 'pearson',
+        query: '',
       }),
     })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const result = await resp.json()
     analysisStore.setAnalysisResult(result)
     analysisStore.addToast('分析完成 ✅', 'success')
   } catch (err: any) {
-    // Fallback: mock result
     analysisStore.setAnalysisResult({
       entityIds: analysisStore.entityIds,
       correlation_matrix: {},
       timestamp: Date.now(),
-      status: 'completed (mock)',
+      status: 'error',
+      message: err.message || '后端未响应',
     })
-    analysisStore.addToast(`分析完成 (${analysisStore.entityCount} 个实体) - 后端未响应，使用本地结果`, 'warning')
+    analysisStore.addToast(`分析失败: ${err.message || '后端未响应'}`, 'error')
   } finally {
     analysisStore.setAnalyzing(false)
   }
