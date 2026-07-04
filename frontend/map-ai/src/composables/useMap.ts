@@ -2,7 +2,6 @@
  * useMap — 地图供应商抽象层。
  * 通过 VITE_MAP_PROVIDER 切换: "baidu" | "amap"
  */
-import { ref, type Ref } from 'vue'
 
 export type MapProvider = 'baidu' | 'amap'
 
