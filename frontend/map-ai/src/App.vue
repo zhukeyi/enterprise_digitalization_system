@@ -1,31 +1,42 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import MapView from './components/MapView.vue'
 import AgentChat from './components/AgentChat.vue'
 import TiptapEditor from './components/TiptapEditor.vue'
 import EntityToast from './components/EntityToast.vue'
 import AnalysisBox from './components/AnalysisBox.vue'
+import VoiceTextInput from './components/VoiceTextInput.vue'
+import { useAnalysisStore } from './stores/analysis'
+
+const store = useAnalysisStore()
+const mapRef = ref<InstanceType<typeof MapView> | null>(null)
+
+function flyToEntity(lng: number, lat: number) {
+  mapRef.value?.flyTo(lng, lat)
+}
+
+// Expose for child components
+;(window as any).__fdeMapRef = mapRef
+;(window as any).__fdeFlyToEntity = flyToEntity
 </script>
 
 <template>
   <header class="app-header">
-    <div class="logo">
-      FDE <span class="accent">MapAI</span>
-    </div>
-    <span style="color: var(--fde-text-light); font-size: 13px">
-      Enterprise Intelligence Platform
-    </span>
+    <div class="logo">FDE <span class="accent">MapAI</span></div>
+    <span style="flex:1;color:var(--fde-text-light);font-size:13px">智慧地图分析平台</span>
+    <VoiceTextInput />
   </header>
 
-  <MapView />
+  <MapView ref="mapRef" />
 
   <aside class="side-panel">
     <AgentChat />
     <TiptapEditor />
   </aside>
 
-  <!-- Global toast notifications for entity actions -->
-  <EntityToast />
+  <!-- Floating analysis box -->
+  <AnalysisBox @fly-to="flyToEntity" />
 
-  <!-- Floating analysis collection box -->
-  <AnalysisBox />
+  <!-- Toast notifications -->
+  <EntityToast />
 </template>

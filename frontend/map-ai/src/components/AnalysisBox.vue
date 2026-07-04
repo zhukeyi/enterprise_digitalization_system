@@ -16,6 +16,10 @@ import EntityCard from './EntityCard.vue'
 import VoiceTextInput from './VoiceTextInput.vue'
 import PronounHint from './PronounHint.vue'
 
+const emit = defineEmits<{
+  'fly-to': [lng: number, lat: number]
+}>()
+
 const analysisStore = useAnalysisStore()
 const isMinimized = ref(false)
 const dragFromIndex = ref<number | null>(null)
@@ -47,20 +51,33 @@ function clearAll() {
 async function submitAnalysis() {
   if (!analysisStore.canAnalyze) return
   analysisStore.setAnalyzing(true)
-  // Actual API call will be wired in M3-T11 with WebSocket
-  // For now, simulate a delay and store a placeholder result
-  setTimeout(() => {
+  try {
+    const apiBase = import.meta.env.VITE_API_URL || '/fde-api'
+    const resp = await fetch(`${apiBase}/api/analysis/correlate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entities: analysisStore.markedEntities.map(e => ({
+          id: e.id, name: e.name, type: e.type,
+          lng: e.lng, lat: e.lat, metadata: e.metadata,
+        })),
+      }),
+    })
+    const result = await resp.json()
+    analysisStore.setAnalysisResult(result)
+    analysisStore.addToast('分析完成 ✅', 'success')
+  } catch (err: any) {
+    // Fallback: mock result
     analysisStore.setAnalysisResult({
       entityIds: analysisStore.entityIds,
+      correlation_matrix: {},
       timestamp: Date.now(),
-      status: 'completed (simulated)',
+      status: 'completed (mock)',
     })
-    analysisStore.addToast(
-      `分析完成 (${analysisStore.entityCount} 个实体)`,
-      'success',
-    )
+    analysisStore.addToast(`分析完成 (${analysisStore.entityCount} 个实体) - 后端未响应，使用本地结果`, 'warning')
+  } finally {
     analysisStore.setAnalyzing(false)
-  }, 1500)
+  }
 }
 </script>
 
@@ -112,6 +129,7 @@ async function submitAnalysis() {
           :index="index"
           @dragstart="handleDragStart"
           @drop="handleDrop"
+          @click="entity.lng != null && entity.lat != null && emit('fly-to', entity.lng, entity.lat)"
         />
       </div>
 

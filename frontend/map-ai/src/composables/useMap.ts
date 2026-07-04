@@ -179,6 +179,22 @@ export function showInfoWindow(map: any, lng: number, lat: number, content: stri
   }
 }
 
+export function onMapClick(map: any, handler: (e: any) => void) {
+  if (getProvider() === 'amap') {
+    map.on('click', handler)
+  } else {
+    map.addEventListener('click', handler)
+  }
+}
+
+export function offMapClick(map: any, handler: (e: any) => void) {
+  if (getProvider() === 'amap') {
+    map.off('click', handler)
+  } else if (map.removeEventListener) {
+    map.removeEventListener('click', handler)
+  }
+}
+
 export function destroyMap(map: any): void {
   if (map?.destroy) map.destroy()
   else if (map?.clearOverlays) { map.clearOverlays(); map = null }
