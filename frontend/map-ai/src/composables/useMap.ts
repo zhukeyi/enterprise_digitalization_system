@@ -63,20 +63,17 @@ let _bmapPromise: Promise<any> | null = null
 
 async function loadBMap(): Promise<any> {
   if (_bmapPromise) return _bmapPromise
+  // Baidu Maps is loaded via <script> in index.html (must use document.write)
+  // Just poll until BMapGL is available
   _bmapPromise = new Promise((resolve, reject) => {
     const w = window as any
     if (w.BMapGL) { resolve(w); return }
-    const ak = getApiKey()
-    const s = document.createElement('script')
-    s.src = `https://api.map.baidu.com/api?v=1.0&type=webgl&ak=${encodeURIComponent(ak)}`
-    s.onload = () => {
-      // Baidu GL loads BMapGL into global
-      if (w.BMapGL) { resolve(w); return }
-      // Sometimes needs a tick
-      setTimeout(() => (w.BMapGL ? resolve(w) : reject(new Error('BMapGL 未定义'))), 300)
-    }
-    s.onerror = () => reject(new Error('百度地图加载失败'))
-    document.head.appendChild(s)
+    let attempts = 0
+    const interval = setInterval(() => {
+      if (w.BMapGL) { clearInterval(interval); resolve(w); return }
+      if (++attempts > 50) { clearInterval(interval); reject(new Error('BMapGL 未定义，可能百度地图脚本加载失败')) }
+    }, 200)
+  })
   })
   return _bmapPromise
 }
