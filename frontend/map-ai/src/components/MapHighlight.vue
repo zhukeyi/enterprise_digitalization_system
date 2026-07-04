@@ -1,82 +1,41 @@
 <script setup lang="ts">
-/**
- * MapHighlight — Map flyTo + entity highlight (M3-T12).
- * 使用高德地图 AMap API。
- */
 import { ref, watch } from 'vue'
 import { useAnalysisStore, type MarkedEntity } from '../stores/analysis'
+import { flyTo, fitAllMarkers, createMarker } from '../composables/useMap'
 
-const props = defineProps<{
-  map: AMap.Map | null
-  highlightedIds?: string[]
-}>()
-
+const props = defineProps<{ map: any; highlightedIds?: string[] }>()
 const analysisStore = useAnalysisStore()
-const highlightMarkers = ref<AMap.Marker[]>([])
+const highlightMarkers = ref<any[]>([])
 
-function flyTo(entity: MarkedEntity) {
-  if (!props.map) return
-  if (entity.lng == null || entity.lat == null) return
-  props.map.setZoomAndCenter(12, [entity.lng, entity.lat])
+function fly(entity: MarkedEntity) {
+  if (!props.map || entity.lng == null || entity.lat == null) return
+  flyTo(props.map, entity.lng, entity.lat)
 }
 
-function fitAllEntities() {
+function fitAll() {
   if (!props.map) return
-  const entities = analysisStore.markedEntities.filter(
-    (e) => e.lng != null && e.lat != null,
-  )
-  if (entities.length === 0) return
-  props.map.setFitView(
-    entities.map((e) => new AMap.Marker({ position: [e.lng!, e.lat!] })),
-    false,
-    [80, 80, 80, 80],
-  )
+  const positions = analysisStore.markedEntities
+    .filter(e => e.lng != null && e.lat != null)
+    .map(e => [e.lng!, e.lat!] as [number, number])
+  fitAllMarkers(props.map, positions)
 }
 
 function updateHighlights() {
   if (!props.map) return
   for (const m of highlightMarkers.value) m.remove()
   highlightMarkers.value = []
-
-  const ids = props.highlightedIds || []
-  for (const id of ids) {
-    const entity = analysisStore.markedEntities.find((e) => e.id === id)
-    if (!entity || entity.lng == null || entity.lat == null) continue
-
-    const el = document.createElement('div')
-    el.className = 'highlight-marker'
-    el.innerHTML = '●'
-    el.style.cssText = `
-      color: #ff5722; font-size: 22px;
-      text-shadow: 0 0 8px rgba(255,87,34,0.6);
-      animation: highlight-pulse 1.5s ease-in-out infinite;
-    `
-    const marker = new AMap.Marker({
-      position: [entity.lng, entity.lat],
-      content: el,
-      offset: new AMap.Pixel(-11, -11),
-    })
-    props.map.add(marker)
-    highlightMarkers.value.push(marker)
+  for (const id of (props.highlightedIds || [])) {
+    const e = analysisStore.markedEntities.find(x => x.id === id)
+    if (!e || e.lng == null || e.lat == null) continue
+    const el = document.createElement('div'); el.innerHTML = '●'
+    el.style.cssText = 'color:#ff5722;font-size:22px;text-shadow:0 0 8px rgba(255,87,34,0.6);animation:highlight-pulse 1.5s ease-in-out infinite'
+    const m = createMarker(props.map, e.lng, e.lat, { content: el })
+    highlightMarkers.value.push(m)
   }
 }
 
-watch(
-  () => props.highlightedIds,
-  () => updateHighlights(),
-  { deep: true },
-)
-
-defineExpose({ flyTo, fitAllEntities, updateHighlights })
+watch(() => props.highlightedIds, updateHighlights, { deep: true })
+defineExpose({ flyTo: fly, fitAllEntities: fitAll, updateHighlights })
 </script>
-
-<template>
-  <!-- Invisible — exposes map interaction methods -->
-</template>
-
-<style>
-@keyframes highlight-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.4); }
-}
-</style>
+<template></template>
+<style>@keyframes highlight-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(1.4)} }</style>
