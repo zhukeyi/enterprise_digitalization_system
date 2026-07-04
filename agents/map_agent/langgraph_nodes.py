@@ -13,6 +13,7 @@ M3-T10-1/2/3: LangGraph nodes
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -20,6 +21,7 @@ from typing import Any
 from agents.map_agent.demo_data import get_all_demo_regions
 from agents.map_agent.engine import get_correlation_engine
 from agents.map_agent.interpreter import get_interpreter
+from agents.map_agent.location_enrich import enrich_locations_sync
 from agents.map_agent.models import (
     AnalysisContext,
     CorrelationMethod,
@@ -116,6 +118,71 @@ def fetch_entities(state: NodeState) -> NodeState:
     state["errors"] = errors
     state["nodes_traced"] = nodes_traced
     timing["fetch_entities"] = int((time.monotonic() - start) * 1000)
+    state["timing_ms"] = timing
+    return state
+
+
+# ══════════════════════════════════════════════════════════════════
+# Node 1.5: Enrich Entity Data (from Baidu Place API)
+# ══════════════════════════════════════════════════════════════════
+
+
+def _enrich_node(state: NodeState) -> NodeState:
+    """Enrich entity properties with location data from Baidu Maps API.
+
+    For each entity with valid coordinates, fetches:
+    - Reverse geocoding (district, business area)
+    - POI category counts (food, shopping, finance, etc.)
+
+    Updates entity.properties in place with enriched numerical attributes.
+    """
+    start = time.monotonic()
+    entities: list[GeoEntity] = state.get("entities", [])
+    nodes_traced: list[str] = state.get("nodes_traced", [])
+    timing: dict[str, int] = state.get("timing_ms", {})
+    errors: list[str] = state.get("errors", [])
+
+    nodes_traced.append("enrich_entity_data")
+
+    # Collect coordinate pairs with valid locations
+    coords: list[tuple[int, tuple[float, float]]] = []
+    for idx, e in enumerate(entities):
+        if e.location.lng and e.location.lat:
+            coords.append((idx, (e.location.lng, e.location.lat)))
+
+    if not coords:
+        logger.info("No entities with coordinates to enrich, skipping")
+        state["nodes_traced"] = nodes_traced
+        timing["enrich_entity_data"] = int((time.monotonic() - start) * 1000)
+        state["timing_ms"] = timing
+        return state
+
+    indices = [c[0] for c in coords]
+    locations = [c[1] for c in coords]
+
+    try:
+        profiles = enrich_locations_sync(locations)
+    except Exception as e:
+        logger.error("Location enrichment failed: %s", e)
+        errors.append(f"位置数据获取失败: {e}")
+        state["errors"] = errors
+        state["nodes_traced"] = nodes_traced
+        timing["enrich_entity_data"] = int((time.monotonic() - start) * 1000)
+        state["timing_ms"] = timing
+        return state
+
+    # Merge enriched properties back into entities
+    for i, profile in zip(indices, profiles):
+        enrich_props = profile.to_properties()
+        for key, value in enrich_props.items():
+            entities[i].properties[key] = value
+
+    logger.info("Enriched %d entities in %dms", len(profiles), int((time.monotonic() - start) * 1000))
+
+    state["entities"] = entities
+    state["errors"] = errors
+    state["nodes_traced"] = nodes_traced
+    timing["enrich_entity_data"] = int((time.monotonic() - start) * 1000)
     state["timing_ms"] = timing
     return state
 
@@ -227,6 +294,7 @@ def generate_interpretation(state: NodeState) -> NodeState:
 
 _PIPELINE_NODES = [
     ("fetch_entities", fetch_entities),
+    ("enrich_entity_data", _enrich_node),
     ("compute_correlation", compute_correlation),
     ("generate_interpretation", generate_interpretation),
 ]
@@ -268,6 +336,7 @@ def run_pipeline(
 
 __all__ = [
     "NodeState",
+    "_enrich_node",
     "compute_correlation",
     "fetch_entities",
     "generate_interpretation",

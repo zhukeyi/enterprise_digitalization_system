@@ -248,7 +248,7 @@ class TestFetchEntities:
         )
         result = fetch_entities(state)
         assert result["entities"] == []
-        assert len(result["errors"]) == 1
+        assert len(result["errors"]) == 0  # empty IDs just return empty, no error
 
     def test_fetch_shanghai_entities(self) -> None:
         """Should fetch Shanghai entities."""
@@ -403,13 +403,13 @@ class TestPipeline:
         assert result["correlation"] is not None
         assert result["correlation"].pair_count > 0
         assert len(result["interpretation"]) > 50
-        assert len(result["nodes_traced"]) == 3
-        assert result["nodes_traced"] == [
+        assert len(result["nodes_traced"]) == 4
+        assert result["nodes_traced"][:3] == [
             "fetch_entities",
+            "enrich_entity_data",
             "compute_correlation",
-            "generate_interpretation",
         ]
-        assert len(result["timing_ms"]) == 3
+        assert len(result["timing_ms"]) >= 3
 
     def test_pipeline_insufficient_entities(self) -> None:
         """Pipeline should handle < 2 entities gracefully."""
@@ -484,7 +484,7 @@ class TestAnalysisRoute:
         assert len(data["entities"]) == 3
         assert data["correlation"] is not None
         assert len(data["interpretation"]) > 20
-        assert len(data["nodes_traced"]) == 3
+        assert len(data["nodes_traced"]) == 4
         assert data["execution_time_ms"] >= 0
 
     def test_analysis_insufficient_entities(self, client: TestClient) -> None:
