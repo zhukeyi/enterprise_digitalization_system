@@ -236,8 +236,8 @@ body { min-height: 100vh; }
   }
 }
 
-/* MapboxGL overrides */
-.mapboxgl-map { font-family: inherit; }
+/* AMap overrides */
+.amap-container { font-family: inherit; }
 
 /* Map error message */
 .map-error {

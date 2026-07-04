@@ -1,76 +1,110 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import mapboxgl from 'mapbox-gl'
 
-// Mapbox token — must be set via env variable VITE_MAPBOX_TOKEN
-const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined
+// 高德地图 Key — 通过 .env 的 VITE_AMAP_KEY 设置
+const amapKey = import.meta.env.VITE_AMAP_KEY as string | undefined
+// 高德安全密钥（JS API 2.0 需要）— 可选
+const amapSecurityCode = import.meta.env.VITE_AMAP_SECURITY_CODE as string | undefined
 
 const mapContainer = ref<HTMLDivElement>()
-let map: mapboxgl.Map | null = null
+let map: AMap.Map | null = null
 
-const mapStyle = ref('streets-v12')
-const styles = [
-  { id: 'streets-v12', name: '街道' },
-  { id: 'satellite-v9', name: '卫星' },
-  { id: 'dark-v11', name: '暗色' },
+const layerType = ref<'normal' | 'satellite'>('normal')
+const layers = [
+  { id: 'normal', name: '标准' },
+  { id: 'satellite', name: '卫星' },
 ]
 
 const mapError = ref<string>('')
 
-function switchStyle(styleId: string) {
-  mapStyle.value = styleId
-  if (map) {
-    map.setStyle(`mapbox://styles/mapbox/${styleId}`)
+function switchLayer(type: 'normal' | 'satellite') {
+  layerType.value = type
+  if (!map) return
+  if (type === 'satellite') {
+    map.setLayers([new AMap.TileLayer.Satellite()])
+  } else {
+    map.setLayers([new AMap.TileLayer()])
   }
 }
 
-onMounted(() => {
+async function loadAMap(): Promise<typeof AMap> {
+  // Dynamically load AMap JS API 2.0
+  const key = amapKey
+  if (!key) throw new Error('VITE_AMAP_KEY not set')
+
+  const security = amapSecurityCode
+    ? `&jscode=${encodeURIComponent(amapSecurityCode)}`
+    : ''
+  const src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}${security}`
+
+  return new Promise((resolve, reject) => {
+    if ((window as any).AMap) {
+      resolve((window as any).AMap)
+      return
+    }
+    const script = document.createElement('script')
+    script.src = src
+    script.onload = () => resolve((window as any).AMap)
+    script.onerror = () => reject(new Error('高德地图 JS API 加载失败'))
+    document.head.appendChild(script)
+  })
+}
+
+onMounted(async () => {
   if (!mapContainer.value) return
 
-  // Validate token before initializing map
-  if (!mapboxToken || mapboxToken === 'pk.placeholder') {
-    mapError.value = 'VITE_MAPBOX_TOKEN 未配置，地图无法加载。请在 .env 文件中设置有效的 Mapbox Access Token。'
-    console.error('VITE_MAPBOX_TOKEN not set. Map will not load.')
+  if (!amapKey || amapKey === 'your_amap_key_here') {
+    mapError.value =
+      '高德地图 Key 未配置。请在 .env 文件中设置 VITE_AMAP_KEY=你的Key（在 https://console.amap.com 申请）'
     return
   }
 
-  mapboxgl.accessToken = mapboxToken
+  try {
+    await loadAMap()
 
-  map = new mapboxgl.Map({
-    container: mapContainer.value,
-    style: `mapbox://styles/mapbox/${mapStyle.value}`,
-    center: [116.397, 39.908], // Beijing
-    zoom: 4,
-    projection: 'mercator',
-  })
+    map = new AMap.Map(mapContainer.value, {
+      zoom: 4,
+      center: [116.397, 39.908], // 北京
+      layers: [new AMap.TileLayer()],
+    })
 
-  map.addControl(new mapboxgl.NavigationControl(), 'top-right')
-  map.addControl(new mapboxgl.ScaleControl(), 'bottom-left')
+    // 控件
+    map.addControl(new AMap.Scale())
+    map.addControl(new AMap.ToolBar({ position: 'RT' }))
 
-  // Add a demo marker
-  new mapboxgl.Marker({ color: '#1a73e8' })
-    .setLngLat([116.397, 39.908])
-    .setPopup(new mapboxgl.Popup().setText('北京 — FDE HQ'))
-    .addTo(map)
+    // 示例标记
+    const marker = new AMap.Marker({
+      position: [116.397, 39.908],
+      title: '北京 — FDE HQ',
+    })
+    map.add(marker)
+  } catch (e: any) {
+    mapError.value = `地图加载失败: ${e.message}`
+    console.error('AMap load error:', e)
+  }
 })
 
 onUnmounted(() => {
-  map?.remove()
+  map?.destroy()
+  map = null
 })
+
+defineExpose({ map, flyTo: (lng: number, lat: number) => map?.setZoomAndCenter(12, [lng, lat]) })
 </script>
 
 <template>
   <section class="map-area">
     <div class="map-overlay">
-      <button v-for="s in styles" :key="s.id"
-        @click="switchStyle(s.id)"
-        :style="mapStyle === s.id ? { background: 'var(--fde-primary)', color: 'white' } : {}">
-        {{ s.name }}
+      <button
+        v-for="l in layers"
+        :key="l.id"
+        @click="switchLayer(l.id as 'normal' | 'satellite')"
+        :style="layerType === l.id ? { background: 'var(--fde-primary)', color: 'white' } : {}"
+      >
+        {{ l.name }}
       </button>
     </div>
-    <div v-if="mapError" class="map-error">
-      ⚠️ {{ mapError }}
-    </div>
+    <div v-if="mapError" class="map-error">⚠️ {{ mapError }}</div>
     <div ref="mapContainer" class="map-container" />
   </section>
 </template>
