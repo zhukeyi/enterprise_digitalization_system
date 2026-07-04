@@ -68,7 +68,7 @@ def fetch_entities(state: NodeState) -> NodeState:
     """
     start = time.monotonic()
     entity_ids: list[str] = state.get("entity_ids", [])
-    provided: list[dict[str, object]] = state.get("provided_entities", [])
+    provided: list[dict[str, Any]] = state.get("provided_entities", [])
     errors: list[str] = state.get("errors", [])
     nodes_traced: list[str] = state.get("nodes_traced", [])
     timing: dict[str, int] = state.get("timing_ms", {})
@@ -236,7 +236,7 @@ def run_pipeline(
     entity_ids: list[str],
     method: str = "pearson",
     query: str = "",
-    provided_entities: list[dict[str, object]] | None = None,
+    provided_entities: list[dict[str, Any]] | None = None,
 ) -> NodeState:
     """Run the full 3-node analysis pipeline.
 
