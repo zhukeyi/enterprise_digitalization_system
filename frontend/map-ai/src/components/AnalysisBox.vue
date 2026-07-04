@@ -207,7 +207,6 @@ async function submitAnalysis() {
         <button class="dismiss-btn" @click="analysisStore.lastAnalysisResult = null">关闭结果</button>
       </div>
 
-    </div>
   </div>
 </template>
 
