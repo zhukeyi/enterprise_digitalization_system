@@ -182,9 +182,27 @@ async function submitAnalysis() {
         <div class="result-section">
           <div class="result-section-title">已分析实体 ({{ (analysisStore.lastAnalysisResult.entities as any[] || []).length }})</div>
           <div v-for="e in (analysisStore.lastAnalysisResult.entities as any[] || [])" :key="e.entity_id" class="result-entity-item">
-            <span class="result-entity-name">{{ e.name }}</span>
-            <span class="result-entity-type">{{ e.entity_type }}</span>
-            <span v-if="e.location" class="result-entity-loc">📍 {{ (e.location.lng as number).toFixed(2) }}, {{ (e.location.lat as number).toFixed(2) }}</span>
+            <div class="result-entity-main">
+              <span class="result-entity-name">{{ e.name }}</span>
+              <span class="result-entity-type">{{ e.entity_type }}</span>
+              <span v-if="e.location" class="result-entity-loc">📍 {{ (e.location.lng as number).toFixed(2) }}, {{ (e.location.lat as number).toFixed(2) }}</span>
+            </div>
+            <!-- POI properties if available -->
+            <div v-if="e.properties?.poi_total" class="result-entity-pois">
+              <span class="poi-total">🔢 {{ e.properties.poi_total }} 个POI</span>
+              <span class="poi-badges">
+                <span v-if="e.properties.poi_food" class="poi-badge">🍽️{{ e.properties.poi_food }}</span>
+                <span v-if="e.properties.poi_shopping" class="poi-badge">🛒{{ e.properties.poi_shopping }}</span>
+                <span v-if="e.properties.poi_hotel" class="poi-badge">🏨{{ e.properties.poi_hotel }}</span>
+                <span v-if="e.properties.poi_finance" class="poi-badge">🏦{{ e.properties.poi_finance }}</span>
+                <span v-if="e.properties.poi_office" class="poi-badge">🏢{{ e.properties.poi_office }}</span>
+                <span v-if="e.properties.poi_residential" class="poi-badge">🏘️{{ e.properties.poi_residential }}</span>
+                <span v-if="e.properties.poi_education" class="poi-badge">🎓{{ e.properties.poi_education }}</span>
+                <span v-if="e.properties.poi_transport" class="poi-badge">🚇{{ e.properties.poi_transport }}</span>
+                <span v-if="e.properties.poi_medical" class="poi-badge">🏥{{ e.properties.poi_medical }}</span>
+                <span v-if="e.properties.poi_scenic" class="poi-badge">🏞️{{ e.properties.poi_scenic }}</span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -408,14 +426,38 @@ async function submitAnalysis() {
   text-transform: uppercase;
 }
 .result-entity-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 8px;
   background: white;
   border-radius: 6px;
   margin-bottom: 4px;
+}
+.result-entity-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
+}
+.result-entity-pois {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.poi-total {
+  color: #1a73e8;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.poi-badges { display: flex; flex-wrap: wrap; gap: 3px; }
+.poi-badge {
+  background: #f0f4f8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
 }
 .result-entity-name { font-weight: 600; }
 .result-entity-type {
