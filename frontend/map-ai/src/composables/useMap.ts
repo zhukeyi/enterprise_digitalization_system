@@ -52,7 +52,7 @@ async function loadAMap(): Promise<any> {
 
 async function createAMap(container: HTMLElement): Promise<any> {
   const A = await loadAMap()
-  return new A.Map(container, { zoom: 4, center: [116.397, 39.908], layers: [new A.TileLayer()] })
+  return new A.Map(container, { zoom: 10, center: [120.155, 30.273], layers: [new A.TileLayer()] })
 }
 
 /* ================================================================
@@ -80,7 +80,7 @@ async function loadBMap(): Promise<any> {
 async function createBMap(container: HTMLElement): Promise<any> {
   const w = await loadBMap()
   const map = new w.BMapGL.Map(container)
-  map.centerAndZoom(new w.BMapGL.Point(116.397, 39.908), 4)
+  map.centerAndZoom(new w.BMapGL.Point(120.155, 30.273), 10)
   map.enableScrollWheelZoom(true)
   return map
 }
