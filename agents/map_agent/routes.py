@@ -188,8 +188,6 @@ async def run_analysis(body: AnalysisRequest) -> AnalysisResult:
     from agents.map_agent.langgraph_nodes import run_pipeline
 
     start = time.monotonic()
-    logger.info("Analysis: %d entity_ids, %d inline entities, method=%s",
-                len(body.entity_ids), len(body.entities), body.method)
     state = run_pipeline(
         entity_ids=body.entity_ids,
         method=body.method,
