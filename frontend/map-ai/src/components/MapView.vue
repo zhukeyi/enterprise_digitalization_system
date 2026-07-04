@@ -17,8 +17,7 @@ const layerType = ref<'normal' | 'satellite'>('normal')
 const layers = [{ id: 'normal', name: '标准' }, { id: 'satellite', name: '卫星' }]
 const addingMode = ref(false)
 const isDrawing = ref(false)
-let drawingManager: any = null
-let drawnPolys: any[] = []
+// Drawing tools will be wired in next iteration
 
 function switchLayer(type: 'normal' | 'satellite') {
   layerType.value = type
@@ -88,7 +87,7 @@ function createBaiduMarker(id: string, name: string, lng: number, lat: number) {
   return marker
 }
 
-function createAmapMarker(id: string, name: string, lng: number, lat: number) {
+function createAmapMarker(_id: string, name: string, lng: number, lat: number) {
   const A = (window as any).AMap
   const marker = new A.Marker({ position: [lng, lat], title: name, draggable: true })
   map.add(marker)

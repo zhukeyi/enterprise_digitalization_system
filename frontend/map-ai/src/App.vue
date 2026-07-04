@@ -6,9 +6,7 @@ import TiptapEditor from './components/TiptapEditor.vue'
 import EntityToast from './components/EntityToast.vue'
 import AnalysisBox from './components/AnalysisBox.vue'
 import VoiceTextInput from './components/VoiceTextInput.vue'
-import { useAnalysisStore } from './stores/analysis'
 
-const store = useAnalysisStore()
 const mapRef = ref<InstanceType<typeof MapView> | null>(null)
 
 function flyToEntity(lng: number, lat: number) {
