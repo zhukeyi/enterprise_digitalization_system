@@ -26,6 +26,7 @@ from agents.map_agent.models import (
     CorrelationRequest,
     CorrelationResponse,
     GeoEntity,
+    GeoPoint,
 )
 
 logger = logging.getLogger("fde.map.langgraph_nodes")
@@ -60,31 +61,41 @@ class NodeState(dict[str, Any]):
 
 
 def fetch_entities(state: NodeState) -> NodeState:
-    """Node 1: Fetch entity data from demo data sources.
+    """Node 1: Fetch entity data from demo data or use provided inline entities.
 
-    Looks up entity_ids in the demo region data and populates
-    state['entities'] with GeoEntity objects.
-
-    Missing entity IDs are logged as warnings and skipped.
+    If state contains 'provided_entities' (from frontend markers),
+    uses those directly. Otherwise looks up entity_ids in demo data.
     """
     start = time.monotonic()
     entity_ids: list[str] = state.get("entity_ids", [])
+    provided: list[dict[str, object]] = state.get("provided_entities", [])
     errors: list[str] = state.get("errors", [])
     nodes_traced: list[str] = state.get("nodes_traced", [])
     timing: dict[str, int] = state.get("timing_ms", {})
 
     nodes_traced.append("fetch_entities")
 
-    if not entity_ids:
-        errors.append("No entity_ids provided")
-        state["entities"] = []
+    # If frontend provided inline entity data, use it directly
+    if provided:
+        state["entities"] = [
+            GeoEntity(
+                entity_id=str(e.get("id", "")),
+                name=str(e.get("name", "")),
+                entity_type=str(e.get("type", "unknown")),
+                location=GeoPoint(
+                    lng=float(e.get("lng", 0)), lat=float(e.get("lat", 0)),
+                ),
+                properties=e.get("metadata", {}),
+            )
+            for e in provided
+        ]
+        timing["fetch_entities"] = int((time.monotonic() - start) * 1000)
         state["errors"] = errors
         state["nodes_traced"] = nodes_traced
-        timing["fetch_entities"] = int((time.monotonic() - start) * 1000)
         state["timing_ms"] = timing
         return state
 
-    # Build lookup from all demo regions
+    # Fallback: lookup from demo data
     all_entities: dict[str, GeoEntity] = {}
     for region in get_all_demo_regions():
         for e in region.entities:
@@ -225,13 +236,15 @@ def run_pipeline(
     entity_ids: list[str],
     method: str = "pearson",
     query: str = "",
+    provided_entities: list[dict[str, object]] | None = None,
 ) -> NodeState:
-    """Run the full 3-node analysis pipeline sequentially.
+    """Run the full 3-node analysis pipeline.
 
     Args:
-        entity_ids: List of entity IDs to analyze.
-        method: Correlation method (pearson, spearman, etc.).
-        query: Optional user natural language query.
+        entity_ids: List of entity IDs.
+        method: Correlation method.
+        query: Optional NL query.
+        provided_entities: Inline entity data from frontend (skips demo lookup).
 
     Returns:
         Final node state with all outputs populated.
@@ -244,9 +257,10 @@ def run_pipeline(
         nodes_traced=[],
         timing_ms={},
     )
+    if provided_entities:
+        state["provided_entities"] = provided_entities
 
     for name, node_fn in _PIPELINE_NODES:
-        logger.info("Executing pipeline node: %s", name)
         state = node_fn(state)
 
     return state

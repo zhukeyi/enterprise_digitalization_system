@@ -193,6 +193,11 @@ class AnalysisRequest(BaseModel):
         default="",
         description="Optional user natural language query for context",
     )
+    entities: list[dict[str, object]] = Field(
+        default_factory=list,
+        description="Optional inline entity data (from frontend markers). "
+        "Each dict: {id, name, type, lng, lat, metadata?}",
+    )
 
 
 class AnalysisResult(BaseModel):

@@ -58,6 +58,14 @@ async function submitAnalysis() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         entity_ids: analysisStore.entityIds,
+        entities: analysisStore.markedEntities.map((e) => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          lng: e.lng,
+          lat: e.lat,
+          metadata: e.metadata,
+        })),
         method: 'pearson',
         query: '',
       }),

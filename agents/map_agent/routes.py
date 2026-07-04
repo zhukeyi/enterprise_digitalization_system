@@ -192,6 +192,7 @@ async def run_analysis(body: AnalysisRequest) -> AnalysisResult:
         entity_ids=body.entity_ids,
         method=body.method,
         query=body.query,
+        provided_entities=body.entities if body.entities else None,
     )
     total_ms = int((time.monotonic() - start) * 1000)
 
