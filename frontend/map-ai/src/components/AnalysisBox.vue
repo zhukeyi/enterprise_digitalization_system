@@ -168,6 +168,46 @@ async function submitAnalysis() {
         </button>
       </div>
     </div>
+
+      <!-- Analysis Result Panel -->
+      <div v-if="analysisStore.lastAnalysisResult" class="analysis-result-panel">
+        <div class="result-header">📋 分析结果</div>
+
+        <!-- AI Interpretation -->
+        <div v-if="analysisStore.lastAnalysisResult.interpretation" class="interpretation-box">
+          {{ analysisStore.lastAnalysisResult.interpretation }}
+        </div>
+
+        <!-- Entities -->
+        <div class="result-section">
+          <div class="result-section-title">已分析实体 ({{ (analysisStore.lastAnalysisResult.entities as any[] || []).length }})</div>
+          <div v-for="e in (analysisStore.lastAnalysisResult.entities as any[] || [])" :key="e.entity_id" class="result-entity-item">
+            <span class="result-entity-name">{{ e.name }}</span>
+            <span class="result-entity-type">{{ e.entity_type }}</span>
+            <span v-if="e.location" class="result-entity-loc">📍 {{ (e.location.lng as number).toFixed(2) }}, {{ (e.location.lat as number).toFixed(2) }}</span>
+          </div>
+        </div>
+
+        <!-- Correlation -->
+        <div v-if="analysisStore.lastAnalysisResult.correlation" class="result-section">
+          <div class="result-section-title">相关性分析</div>
+          <div class="correlation-summary">
+            {{ (analysisStore.lastAnalysisResult.correlation as any).summary }}
+          </div>
+          <div v-if="(analysisStore.lastAnalysisResult.correlation as any).pair_count > 0">
+            <div v-for="(r, i) in (analysisStore.lastAnalysisResult.correlation as any).results" :key="i" class="correlation-pair">
+              <span>{{ r.entity_a }} ↔ {{ r.entity_b }}</span>
+              <span :style="{ color: r.coefficient > 0 ? '#e74c3c' : '#27ae60' }">
+                {{ r.coefficient > 0 ? '+' : '' }}{{ (r.coefficient as number).toFixed(3) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button class="dismiss-btn" @click="analysisStore.lastAnalysisResult = null">关闭结果</button>
+      </div>
+
+    </div>
   </div>
 </template>
 
@@ -336,4 +376,81 @@ async function submitAnalysis() {
     transform: rotate(360deg);
   }
 }
+
+.analysis-result-panel {
+  border-top: 2px solid var(--fde-primary, #1a73e8);
+  padding: 12px 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #f8fafc;
+}
+.result-header {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #1a73e8;
+}
+.interpretation-box {
+  background: white;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+  margin-bottom: 10px;
+  border-left: 3px solid #1a73e8;
+}
+.result-section { margin-bottom: 10px; }
+.result-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.result-entity-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.result-entity-name { font-weight: 600; }
+.result-entity-type {
+  background: #e8f0fe;
+  color: #1a73e8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.result-entity-loc { color: #999; }
+.correlation-summary {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 6px;
+}
+.correlation-pair {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+.dismiss-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  background: #eee;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+}
+.dismiss-btn:hover { background: #ddd; }
 </style>
