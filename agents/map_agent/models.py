@@ -216,3 +216,48 @@ class AnalysisResult(BaseModel):
         description="Pipeline nodes executed in order",
     )
     errors: list[str] = Field(default_factory=list, description="Accumulated warnings/errors")
+
+
+# ══════════════════════════════════════════════════════════════════
+# Marker Persistence Models (v2.0 — Point Persistence + Tagging)
+# ══════════════════════════════════════════════════════════════════
+
+
+class MarkerCreate(BaseModel):
+    """Request body for creating a marker."""
+
+    name: str = Field(description="Marker display name", min_length=1, max_length=200)
+    lng: float = Field(description="Longitude")
+    lat: float = Field(description="Latitude")
+    note: str = Field(default="", description="Optional note text for auto-tagging")
+
+
+class MarkerUpdate(BaseModel):
+    """Request body for updating a marker."""
+
+    name: str | None = Field(default=None, description="Updated name", max_length=200)
+    note: str | None = Field(default=None, description="Updated note text")
+
+
+class Marker(BaseModel):
+    """A persisted map marker with auto-generated tags."""
+
+    id: str = Field(description="UUID identifier")
+    name: str = Field(description="Marker display name")
+    lng: float = Field(description="Longitude")
+    lat: float = Field(description="Latitude")
+    note: str = Field(default="", description="User-provided note text")
+    tags: list[str] = Field(default_factory=list, description="Auto-extracted tags")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+    )
+
+
+class TagInfo(BaseModel):
+    """Aggregated tag info for the resource panel."""
+
+    tag: str = Field(description="Tag name")
+    count: int = Field(description="Number of markers with this tag")

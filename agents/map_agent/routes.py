@@ -18,6 +18,7 @@ from agents.map_agent.demo_data import (
     get_entities_in_bounds,
 )
 from agents.map_agent.engine import get_correlation_engine
+from agents.map_agent.marker_store import get_marker_store
 from agents.map_agent.models import (
     AnalysisContext,
     AnalysisRequest,
@@ -26,8 +27,12 @@ from agents.map_agent.models import (
     CorrelationResponse,
     GeoEntity,
     MapRegion,
+    Marker,
+    MarkerCreate,
+    MarkerUpdate,
     SpatialQueryRequest,
     SpatialQueryResponse,
+    TagInfo,
 )
 
 logger = logging.getLogger("fde.map.router")
@@ -281,6 +286,61 @@ async def get_task_status(task_id: str) -> dict:
         "created_at": info.created_at,
         "completed_at": info.completed_at,
     }
+
+
+# ══════════════════════════════════════════════════════════════════
+# Marker Persistence Endpoints (v2.0)
+# ══════════════════════════════════════════════════════════════════
+
+
+@router.get("/markers", response_model=list[Marker])
+async def list_markers(
+    search: str = Query(default="", description="Search by name or note"),
+    tag: str = Query(default="", description="Filter by tag"),
+) -> list[Marker]:
+    """List all saved markers, with optional search/tag filtering."""
+    store = get_marker_store()
+    if search:
+        return store.search(search)
+    if tag:
+        return store.filter_by_tag(tag)
+    return store.list_all()
+
+
+@router.post("/markers", response_model=Marker, status_code=201)
+async def create_marker(body: MarkerCreate) -> Marker:
+    """Create a new marker with auto-extracted tags from the note."""
+    store = get_marker_store()
+    return store.create(body)
+
+
+@router.put("/markers/{marker_id}", response_model=Marker)
+async def update_marker(marker_id: str, body: MarkerUpdate) -> Marker:
+    """Update a marker's name and/or note. Tags are re-extracted if note changes."""
+    store = get_marker_store()
+    marker = store.update(marker_id, body)
+    if marker is None:
+        raise HTTPException(404, f"Marker '{marker_id}' not found")
+    return marker
+
+
+@router.delete("/markers/{marker_id}", response_model=dict)
+async def delete_marker(marker_id: str) -> dict:
+    """Delete a marker by ID."""
+    store = get_marker_store()
+    if not store.delete(marker_id):
+        raise HTTPException(404, f"Marker '{marker_id}' not found")
+    return {"status": "deleted", "id": marker_id}
+
+
+@router.get("/markers/tags", response_model=list[TagInfo])
+async def list_marker_tags() -> list[TagInfo]:
+    """Get all tags with their marker counts."""
+    store = get_marker_store()
+    return [
+        TagInfo(tag=tag, count=count)
+        for tag, count in store.get_all_tags()
+    ]
 
 
 # ══════════════════════════════════════════════════════════════════

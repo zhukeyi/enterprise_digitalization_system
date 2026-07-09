@@ -5,6 +5,7 @@ import AgentChat from './components/AgentChat.vue'
 import TiptapEditor from './components/TiptapEditor.vue'
 import EntityToast from './components/EntityToast.vue'
 import AnalysisBox from './components/AnalysisBox.vue'
+import ResourcePanel from './components/ResourcePanel.vue'
 import VoiceTextInput from './components/VoiceTextInput.vue'
 
 const mapRef = ref<InstanceType<typeof MapView> | null>(null)
@@ -31,6 +32,9 @@ function flyToEntity(lng: number, lat: number) {
     <AgentChat />
     <TiptapEditor />
   </aside>
+
+  <!-- Floating resource panel (left side) -->
+  <ResourcePanel @fly-to="flyToEntity" />
 
   <!-- Floating analysis box -->
   <AnalysisBox @fly-to="flyToEntity" />
