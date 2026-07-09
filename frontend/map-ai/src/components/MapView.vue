@@ -11,9 +11,12 @@ const label = provider === 'amap' ? '高德' : '百度'
 
 const mapContainer = ref<HTMLDivElement>()
 const mapError = ref('')
-let map: any = null
+const map = ref<any>(null)
 let markers: any[] = []
 let markerIdCounter = 0
+
+// Track which entity IDs have been rendered to avoid duplicates
+const renderedIds = new Set<string>()
 
 // Persisted markers (from backend) rendered on the map
 let persistedMarkers: any[] = []
@@ -31,8 +34,18 @@ const pendingMarker = ref<{ lng: number; lat: number } | null>(null)
 
 function switchLayer(type: 'normal' | 'satellite') {
   layerType.value = type
-  if (!map) return
-  type === 'satellite' ? switchToSatellite(map) : switchToNormal(map)
+  if (!map.value) return
+  type === 'satellite' ? switchToSatellite(map.value) : switchToNormal(map.value)
+}
+
+/* ================================================================
+ * HTML escape utility (prevent XSS in InfoWindow)
+ * ================================================================ */
+
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
 }
 
 /* ================================================================
@@ -41,7 +54,7 @@ function switchLayer(type: 'normal' | 'satellite') {
 
 function handleMapClick(e: any) {
   if (!addingMode.value && !isDrawing.value) return
-  if (!map) return
+  if (!map.value) return
 
   let lng: number, lat: number
   if (provider === 'baidu') {
@@ -109,7 +122,7 @@ function addMarkerToMap(
   tags: string[] = [],
   note: string = '',
 ) {
-  if (!map) return
+  if (!map.value) return
 
   const marker = provider === 'baidu'
     ? createBaiduMarker(id, name, lng, lat, tags, note)
@@ -130,29 +143,32 @@ function createBaiduMarker(
   const pt = new B.Point(lng, lat)
   const marker = new B.Marker(pt)
   marker.setTitle(name)
-  map.addOverlay(marker)
+  map.value.addOverlay(marker)
 
   marker.addEventListener('click', () => {
-    const tagsHtml = tags.length > 0
-      ? `<div style="margin-top:4px">${tags.map((t: string) => `<span style="display:inline-block;background:#e8f0fe;color:#1a73e8;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px">${t}</span>`).join('')}</div>`
+    const safeName = escapeHtml(name)
+    const safeTags = tags.map((t: string) => escapeHtml(t))
+    const safeNote = note ? escapeHtml(note.slice(0, 80) + (note.length > 80 ? '...' : '')) : ''
+    const tagsHtml = safeTags.length > 0
+      ? `<div style="margin-top:4px">${safeTags.map((t: string) => `<span style="display:inline-block;background:#e8f0fe;color:#1a73e8;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px">${t}</span>`).join('')}</div>`
       : ''
-    const noteHtml = note
-      ? `<div style="margin-top:4px;color:#666;font-size:11px;max-width:180px;word-break:break-all">${note.slice(0, 80)}${note.length > 80 ? '...' : ''}</div>`
+    const noteHtml = safeNote
+      ? `<div style="margin-top:4px;color:#666;font-size:11px;max-width:180px;word-break:break-all">${safeNote}</div>`
       : ''
     const html = `<div style="padding:6px 12px;font-size:13px">
-      <strong>${name}</strong><br>
+      <strong>${safeName}</strong><br>
       <span style="color:#666;font-size:11px">${lng.toFixed(4)}, ${lat.toFixed(4)}</span>
       ${tagsHtml}
       ${noteHtml}
-      <br><button onclick="window.__fdeDelMarker('${id}')" style="margin-top:4px;font-size:11px;color:#e74c3c;border:none;background:none;cursor:pointer">删除</button>
+      <br><button onclick="window.__fdeDelMarker('${escapeHtml(id)}')" style="margin-top:4px;font-size:11px;color:#e74c3c;border:none;background:none;cursor:pointer">删除</button>
     </div>`
     const iw = new B.InfoWindow(html, { width: 220 })
-    map.openInfoWindow(iw, pt)
+    map.value.openInfoWindow(iw, pt)
     ;(window as any).__fdeDelMarker = async (mid: string) => {
       removeMarkerById(mid)
       store.removeEntity(mid)
       await markersStore.deleteMarker(mid)
-      map.closeInfoWindow()
+      map.value.closeInfoWindow()
     }
   })
   return marker
@@ -168,24 +184,27 @@ function createAmapMarker(
 ) {
   const A = (window as any).AMap
   const marker = new A.Marker({ position: [lng, lat], title: name, draggable: true })
-  map.add(marker)
+  map.value.add(marker)
 
-  const tagsHtml = tags.length > 0
-    ? `<div style="margin-top:4px">${tags.map((t: string) => `<span style="display:inline-block;background:#e8f0fe;color:#1a73e8;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px">${t}</span>`).join('')}</div>`
+  const safeName = escapeHtml(name)
+  const safeTags = tags.map((t: string) => escapeHtml(t))
+  const safeNote = note ? escapeHtml(note.slice(0, 80) + (note.length > 80 ? '...' : '')) : ''
+  const tagsHtml = safeTags.length > 0
+    ? `<div style="margin-top:4px">${safeTags.map((t: string) => `<span style="display:inline-block;background:#e8f0fe;color:#1a73e8;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px">${t}</span>`).join('')}</div>`
     : ''
-  const noteHtml = note
-    ? `<div style="margin-top:4px;color:#666;font-size:11px;max-width:180px;word-break:break-all">${note.slice(0, 80)}${note.length > 80 ? '...' : ''}</div>`
+  const noteHtml = safeNote
+    ? `<div style="margin-top:4px;color:#666;font-size:11px;max-width:180px;word-break:break-all">${safeNote}</div>`
     : ''
 
   marker.on('click', () => {
     const html = `<div style="padding:6px 12px;font-size:13px">
-      <strong>${name}</strong><br>
+      <strong>${safeName}</strong><br>
       <span style="color:#666;font-size:11px">${lng.toFixed(4)}, ${lat.toFixed(4)}</span>
       ${tagsHtml}
       ${noteHtml}
     </div>`
     const iw = new A.InfoWindow({ content: html, offset: new A.Pixel(0, -30) })
-    iw.open(map, [lng, lat])
+    iw.open(map.value, [lng, lat])
   })
   return marker
 }
@@ -194,8 +213,8 @@ function removeMarkerById(id: string) {
   const idx = markers.findIndex(m => m.id === id)
   if (idx === -1) return
   const m = markers[idx]
-  if (provider === 'baidu') map?.removeOverlay(m.marker)
-  else map?.remove(m.marker)
+  if (provider === 'baidu') map.value?.removeOverlay(m.marker)
+  else map.value?.remove(m.marker)
   markers.splice(idx, 1)
 }
 
@@ -204,21 +223,24 @@ function removeMarkerById(id: string) {
  * ================================================================ */
 
 function renderPersistedMarkers() {
-  if (!map) return
+  if (!map.value) return
 
   // Clear old persisted markers
   for (const m of persistedMarkers) {
-    if (provider === 'baidu') map?.removeOverlay(m.marker)
-    else map?.remove(m.marker)
+    if (provider === 'baidu') map.value?.removeOverlay(m.marker)
+    else map.value?.remove(m.marker)
   }
   persistedMarkers = []
+  renderedIds.clear()
 
   // Add all markers from the store
   for (const m of markersStore.markers) {
+    if (renderedIds.has(m.id)) continue
     const marker = provider === 'baidu'
       ? createBaiduMarker(m.id, m.name, m.lng, m.lat, m.tags, m.note)
       : createAmapMarker(m.id, m.name, m.lng, m.lat, m.tags, m.note)
     persistedMarkers.push({ id: m.id, marker, lng: m.lng, lat: m.lat })
+    renderedIds.add(m.id)
   }
 }
 
@@ -228,18 +250,24 @@ watch(() => markersStore.markers.length, () => {
 })
 
 /* ================================================================
- * 同步 analysis store → map markers
+ * 同步 analysis store → map markers (only for entities not already
+ * rendered as persisted markers)
  * ================================================================ */
 
 watch(() => store.markedEntities.length, () => {
-  // Clear existing markers and re-add from store
+  if (!map.value) return
+  // Clear existing analysis markers
   for (const m of markers) {
-    if (provider === 'baidu') map?.removeOverlay(m.marker)
-    else map?.remove(m.marker)
+    if (provider === 'baidu') map.value?.removeOverlay(m.marker)
+    else map.value?.remove(m.marker)
   }
   markers = []
   for (const e of store.markedEntities) {
-    if (e.lng != null && e.lat != null) addMarkerToMap(e.id, e.name, e.lng, e.lat)
+    if (renderedIds.has(e.id)) continue
+    if (e.lng != null && e.lat != null) {
+      addMarkerToMap(e.id, e.name, e.lng, e.lat)
+      renderedIds.add(e.id)
+    }
   }
 })
 
@@ -256,11 +284,11 @@ onMounted(async () => {
   }
   try {
     await loadMapSDK()
-    map = await createMap(mapContainer.value)
-    addMapControls(map)
+    map.value = await createMap(mapContainer.value)
+    addMapControls(map.value)
 
     // 点击事件
-    onMapClick(map, handleMapClick)
+    onMapClick(map.value, handleMapClick)
 
     // 加载已持久化的实体 (localStorage)
     for (const e of store.markedEntities) {
@@ -276,16 +304,20 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (map) destroyMap(map)
-  map = null
+  if (map.value) destroyMap(map.value)
+  map.value = null
 })
 
 // Expose map and helper functions
-defineExpose({ map, flyTo: (lng: number, lat: number) => {
-  if (!map) return
-  if (provider === 'baidu') map.flyTo?.({ lng, lat }, 14) || map.centerAndZoom(new (window as any).BMapGL.Point(lng, lat), 14)
-  else map.setZoomAndCenter(14, [lng, lat])
-}})
+function flyTo(lng: number, lat: number) {
+  if (!map.value) return
+  if (provider === 'baidu') {
+    map.value.flyTo?.({ lng, lat }, 14) || map.value.centerAndZoom(new (window as any).BMapGL.Point(lng, lat), 14)
+  } else {
+    map.value.setZoomAndCenter(14, [lng, lat])
+  }
+}
+defineExpose({ map: map, flyTo })
 </script>
 
 <template>

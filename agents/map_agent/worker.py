@@ -7,6 +7,7 @@ Handles map/spatial analysis tasks dispatched by the supervisor.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from agents.orchestrator.langgraph.workers import BaseWorker
 from agents.orchestrator.tools.registry import ToolDefinition, ToolRegistry
@@ -40,7 +41,7 @@ def register_map_tools(registry: ToolRegistry) -> None:
         south: float = 39.5,
         east: float = 117.0,
         north: float = 40.5,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Query entities in a bounding box."""
         entities = get_entities_in_bounds(west, south, east, north)
         return {
@@ -61,7 +62,7 @@ def register_map_tools(registry: ToolRegistry) -> None:
     def _correlate_handler(
         entity_ids: list[str],
         property_name: str = "population",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Run correlation analysis on specified entities."""
         engine = __import__("agents.map_agent.engine", fromlist=["get_correlation_engine"])
         corr_engine = engine.get_correlation_engine()

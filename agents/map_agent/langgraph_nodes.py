@@ -13,7 +13,6 @@ M3-T10-1/2/3: LangGraph nodes
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any
@@ -85,7 +84,8 @@ def fetch_entities(state: NodeState) -> NodeState:
                 name=str(e.get("name", "")),
                 entity_type=str(e.get("type", "unknown")),
                 location=GeoPoint(
-                    lng=float(e.get("lng", 0)), lat=float(e.get("lat", 0)),
+                    lng=float(e.get("lng", 0)),
+                    lat=float(e.get("lat", 0)),
                 ),
                 properties=e.get("metadata", {}),
             )
@@ -172,12 +172,14 @@ def _enrich_node(state: NodeState) -> NodeState:
         return state
 
     # Merge enriched properties back into entities
-    for i, profile in zip(indices, profiles):
+    for i, profile in zip(indices, profiles, strict=True):
         enrich_props = profile.to_properties()
         for key, value in enrich_props.items():
             entities[i].properties[key] = value
 
-    logger.info("Enriched %d entities in %dms", len(profiles), int((time.monotonic() - start) * 1000))
+    logger.info(
+        "Enriched %d entities in %dms", len(profiles), int((time.monotonic() - start) * 1000)
+    )
 
     state["entities"] = entities
     state["errors"] = errors
@@ -328,7 +330,7 @@ def run_pipeline(
     if provided_entities:
         state["provided_entities"] = provided_entities
 
-    for name, node_fn in _PIPELINE_NODES:
+    for _name, node_fn in _PIPELINE_NODES:
         state = node_fn(state)
 
     return state

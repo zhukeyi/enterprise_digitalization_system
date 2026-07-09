@@ -106,11 +106,7 @@ def extract(text: str, max_tags: int = 5) -> list[str]:
             noun_candidates: list[str] = []
             for word, flag in words:
                 # Take nouns (n*), proper nouns (nr/ns/nt/nz), and place names
-                if (
-                    flag.startswith("n")
-                    and len(word) >= 2
-                    and word not in seen
-                ):
+                if flag.startswith("n") and len(word) >= 2 and word not in seen:
                     noun_candidates.append(word)
 
             # Take top nouns by frequency

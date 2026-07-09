@@ -1,11 +1,12 @@
-"""Location Enrichment — 通过百度地图 API 将坐标转换为物理属性。
+"""Location Enrichment -- Convert coordinates to physical attributes via Baidu Maps API.
 
-为每个实体坐标调用百度 Place API，获取周边 POI 密度、商圈级别、
-地理信息等数值化属性，用于后续相关性分析。
+For each entity coordinate, call Baidu Place API to obtain surrounding POI density,
+business district level, geographic info and other numeric attributes for
+correlation analysis.
 
-使用百度地图服务端 AK，支持：
-- 逆地理编码：获取行政区划、商圈信息
-- 周边 POI 检索：按类别统计 POI 数量（餐饮/购物/金融/教育/医疗/交通等）
+Uses Baidu Maps server-side AK, supporting:
+- Reverse geocoding: obtain administrative district, business district info
+- Nearby POI search: count POIs by category (food/shopping/finance/education/medical/transport etc.)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import aiohttp
 logger = logging.getLogger("fde.map.location_enrich")
 
 # ── Config ──────────────────────────────────────────────────────────
-BAIDU_AK = os.getenv("BAIDU_SERVER_AK", "HQmJZ8vYRU8pkaP8zxXRtxNplyOXNjFW")
+BAIDU_AK = os.getenv("BAIDU_SERVER_AK", "")
 PLACE_API = "https://api.map.baidu.com/place/v2/search"
 GEOCODE_API = "https://api.map.baidu.com/reverse_geocoding/v3/"
 DEFAULT_RADIUS = 1000  # meters
@@ -90,17 +91,19 @@ async def _fetch_poi_count(
     radius: int = DEFAULT_RADIUS,
 ) -> int:
     """Fetch POI count for a single category keyword."""
-    params = {
+    params: dict[str, str] = {
         "ak": BAIDU_AK,
         "query": keyword,
         "location": f"{lat},{lng}",
-        "radius": radius,
+        "radius": str(radius),
         "output": "json",
-        "page_size": 1,
+        "page_size": "1",
         "scope": "2",
     }
     try:
-        async with session.get(PLACE_API, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+        async with session.get(
+            PLACE_API, params=params, timeout=aiohttp.ClientTimeout(total=5)
+        ) as resp:
             if resp.status != 200:
                 return 0
             data: dict[str, Any] = await resp.json()
@@ -117,14 +120,16 @@ async def _fetch_geocode(
     lat: float,
 ) -> dict[str, str]:
     """Reverse geocode a coordinate."""
-    params = {
+    params: dict[str, str] = {
         "ak": BAIDU_AK,
         "location": f"{lat},{lng}",
         "output": "json",
         "coordtype": "wgs84ll",
     }
     try:
-        async with session.get(GEOCODE_API, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+        async with session.get(
+            GEOCODE_API, params=params, timeout=aiohttp.ClientTimeout(total=5)
+        ) as resp:
             if resp.status != 200:
                 return {}
             data: dict[str, Any] = await resp.json()
@@ -160,25 +165,26 @@ async def enrich_location(
     profile = LocationProfile(lng=lng, lat=lat)
 
     async with aiohttp.ClientSession() as session:
-        # Fetch geocode + all POI categories in parallel
+        # Fetch geocode + all POI categories in parallel via asyncio.gather
         geo_task = _fetch_geocode(session, lng, lat)
-        poi_tasks = {
-            key: _fetch_poi_count(session, kw, lng, lat, radius)
-            for key, kw in POI_CATEGORIES.items()
-        }
+        poi_keys = list(POI_CATEGORIES.keys())
+        poi_coros = [
+            _fetch_poi_count(session, POI_CATEGORIES[key], lng, lat, radius) for key in poi_keys
+        ]
+
+        # Run all requests concurrently
+        geo_result, poi_results = await asyncio.gather(geo_task, asyncio.gather(*poi_coros))
 
         # Process geocode
-        geo = await geo_task
-        profile.address = geo.get("address", "")
-        profile.district = geo.get("district", "")
-        profile.adcode = geo.get("adcode", "")
-        profile.business_area = geo.get("business", "")
+        profile.address = geo_result.get("address", "")
+        profile.district = geo_result.get("district", "")
+        profile.adcode = geo_result.get("adcode", "")
+        profile.business_area = geo_result.get("business", "")
 
-        # Process POI counts (sequential to respect rate limits)
+        # Process POI counts
         poi_counts: dict[str, int] = {}
         poi_total = 0
-        for key, task in poi_tasks.items():
-            count = await task
+        for key, count in zip(poi_keys, poi_results, strict=True):
             poi_counts[key] = count
             poi_total += count
 
@@ -191,7 +197,10 @@ async def enrich_location(
     profile.enrichment_ms = int((time.monotonic() - start) * 1000)
     logger.info(
         "Enriched (%.4f, %.4f): %d POIs in %d categories, %s, %dms",
-        lng, lat, poi_total, len(poi_counts),
+        lng,
+        lat,
+        poi_total,
+        len(poi_counts),
         profile.district or "?",
         profile.enrichment_ms,
     )
@@ -220,6 +229,7 @@ def enrich_locations_sync(
         loop = asyncio.get_running_loop()
         # Running loop exists — create new loop in thread
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(_run_in_new_loop, locations).result()
     except RuntimeError:

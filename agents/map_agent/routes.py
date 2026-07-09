@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -41,13 +42,28 @@ router = APIRouter(prefix="/map", tags=["map"])
 
 # Module-level analysis context (one per session)
 _sessions: dict[str, AnalysisContext] = {}
+_session_timestamps: dict[str, float] = {}
+_SESSION_TTL = 3600  # 1 hour
+
+
+def _cleanup_stale_sessions() -> None:
+    """Remove sessions older than _SESSION_TTL seconds."""
+    now = time.time()
+    stale = [sid for sid, ts in _session_timestamps.items() if now - ts > _SESSION_TTL]
+    for sid in stale:
+        _sessions.pop(sid, None)
+        _session_timestamps.pop(sid, None)
+    if stale:
+        logger.debug("Cleaned up %d stale analysis sessions", len(stale))
 
 
 def _get_or_create_session(session_id: str | None = None) -> AnalysisContext:
     """Get existing or create new analysis session."""
+    _cleanup_stale_sessions()
     sid = session_id or str(uuid.uuid4())
     if sid not in _sessions:
         _sessions[sid] = AnalysisContext(session_id=sid)
+    _session_timestamps[sid] = time.time()
     return _sessions[sid]
 
 
@@ -125,10 +141,10 @@ async def remove_entity_from_context(
     return ctx
 
 
-@router.delete("/context", response_model=dict)
+@router.delete("/context", response_model=dict[str, Any])
 async def clear_context(
     session_id: str = Query(default="", description="Session ID"),
-) -> dict:
+) -> dict[str, Any]:
     """Clear the entire analysis context."""
     sid = session_id or str(uuid.uuid4())
     _sessions[sid] = AnalysisContext(session_id=sid)
@@ -231,7 +247,7 @@ async def run_analysis(body: AnalysisRequest) -> AnalysisResult:
 async def start_async_analysis(
     body: AnalysisRequest,
     session_id: str = Query(default="", description="WebSocket session ID"),
-) -> dict:
+) -> dict[str, Any]:
     """Start an async analysis task with WebSocket progress push.
 
     The task runs in the background and pushes progress updates
@@ -263,7 +279,7 @@ async def start_async_analysis(
 
 
 @router.get("/tasks/{task_id}")
-async def get_task_status(task_id: str) -> dict:
+async def get_task_status(task_id: str) -> dict[str, Any]:
     """Get the status of an async analysis task."""
     from agents.map_agent.tasks import get_task_store
 
@@ -324,8 +340,8 @@ async def update_marker(marker_id: str, body: MarkerUpdate) -> Marker:
     return marker
 
 
-@router.delete("/markers/{marker_id}", response_model=dict)
-async def delete_marker(marker_id: str) -> dict:
+@router.delete("/markers/{marker_id}", response_model=dict[str, Any])
+async def delete_marker(marker_id: str) -> dict[str, Any]:
     """Delete a marker by ID."""
     store = get_marker_store()
     if not store.delete(marker_id):
@@ -337,10 +353,7 @@ async def delete_marker(marker_id: str) -> dict:
 async def list_marker_tags() -> list[TagInfo]:
     """Get all tags with their marker counts."""
     store = get_marker_store()
-    return [
-        TagInfo(tag=tag, count=count)
-        for tag, count in store.get_all_tags()
-    ]
+    return [TagInfo(tag=tag, count=count) for tag, count in store.get_all_tags()]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -349,7 +362,7 @@ async def list_marker_tags() -> list[TagInfo]:
 
 
 @router.get("/health")
-async def map_health() -> dict:
+async def map_health() -> dict[str, Any]:
     """MapAI service health check."""
     regions = len(get_all_demo_regions())
     entities = sum(len(r.entities) for r in get_all_demo_regions())

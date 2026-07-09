@@ -111,9 +111,7 @@ class TestMarkerStore:
     def test_get_by_id(self, temp_store) -> None:
         from agents.map_agent.models import MarkerCreate
 
-        created = temp_store.create(
-            MarkerCreate(name="测试点", lng=1.0, lat=1.0, note="")
-        )
+        created = temp_store.create(MarkerCreate(name="测试点", lng=1.0, lat=1.0, note=""))
         found = temp_store.get(created.id)
         assert found is not None
         assert found.name == "测试点"
@@ -124,9 +122,7 @@ class TestMarkerStore:
     def test_update_marker_note(self, temp_store) -> None:
         from agents.map_agent.models import MarkerCreate, MarkerUpdate
 
-        created = temp_store.create(
-            MarkerCreate(name="空点", lng=1.0, lat=1.0, note="")
-        )
+        created = temp_store.create(MarkerCreate(name="空点", lng=1.0, lat=1.0, note=""))
         updated = temp_store.update(
             created.id,
             MarkerUpdate(note="这里是一个高铁站"),
@@ -138,9 +134,7 @@ class TestMarkerStore:
     def test_update_marker_name(self, temp_store) -> None:
         from agents.map_agent.models import MarkerCreate, MarkerUpdate
 
-        created = temp_store.create(
-            MarkerCreate(name="旧名", lng=1.0, lat=1.0, note="")
-        )
+        created = temp_store.create(MarkerCreate(name="旧名", lng=1.0, lat=1.0, note=""))
         updated = temp_store.update(created.id, MarkerUpdate(name="新名"))
         assert updated is not None
         assert updated.name == "新名"
@@ -153,9 +147,7 @@ class TestMarkerStore:
     def test_delete_marker(self, temp_store) -> None:
         from agents.map_agent.models import MarkerCreate
 
-        created = temp_store.create(
-            MarkerCreate(name="待删除", lng=1.0, lat=1.0, note="")
-        )
+        created = temp_store.create(MarkerCreate(name="待删除", lng=1.0, lat=1.0, note=""))
         assert temp_store.delete(created.id) is True
         assert temp_store.get(created.id) is None
         assert temp_store.delete(created.id) is False
@@ -172,9 +164,7 @@ class TestMarkerStore:
     def test_search_by_note(self, temp_store) -> None:
         from agents.map_agent.models import MarkerCreate
 
-        temp_store.create(
-            MarkerCreate(name="某点", lng=1.0, lat=1.0, note="这是一个特殊的备注")
-        )
+        temp_store.create(MarkerCreate(name="某点", lng=1.0, lat=1.0, note="这是一个特殊的备注"))
         results = temp_store.search("特殊")
         assert len(results) == 1
 
@@ -203,9 +193,7 @@ class TestMarkerStore:
         from agents.map_agent.marker_store import MarkerStore
         from agents.map_agent.models import MarkerCreate
 
-        temp_store.create(
-            MarkerCreate(name="持久化测试", lng=1.0, lat=1.0, note="高铁站")
-        )
+        temp_store.create(MarkerCreate(name="持久化测试", lng=1.0, lat=1.0, note="高铁站"))
 
         # Create a new store pointing to the same file
         new_store = MarkerStore(path=temp_store.path)

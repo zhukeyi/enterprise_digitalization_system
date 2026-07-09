@@ -110,6 +110,11 @@ class SpatialCorrelationEngine:
         entity_a = next((e for e in entities if e.entity_id == pair.entity_a_id), None)
         entity_b = next((e for e in entities if e.entity_id == pair.entity_b_id), None)
 
+        if entity_a is None:
+            logger.warning("Entity '%s' not found for correlation pair", pair.entity_a_id)
+        if entity_b is None:
+            logger.warning("Entity '%s' not found for correlation pair", pair.entity_b_id)
+
         val_a = entity_a.properties.get(pair.property_a, 0) if entity_a else 0
         val_b = entity_b.properties.get(pair.property_b, 0) if entity_b else 0
 
@@ -131,8 +136,8 @@ class SpatialCorrelationEngine:
             interpretation=self._interpret(coefficient, pair.property_a, pair.property_b),
         )
 
-    def _compute_coefficient(self, a: float, b: float) -> tuple[float, float]:
-        """Compute correlation coefficient — ratio-based heuristic.
+    def _compute_coefficient(self, a: Any, b: Any) -> tuple[float, float]:
+        """Compute correlation coefficient -- ratio-based heuristic.
 
         For single-point mock data uses ratio similarity converted to
         a correlation-like score. Production multi-point analysis
@@ -142,8 +147,7 @@ class SpatialCorrelationEngine:
             if a == 0 and b == 0:
                 return 1.0, 0.0
             max_val = max(abs(a), abs(b))
-            if max_val == 0:
-                return 0.0, 1.0
+            # max_val > 0 is guaranteed here since a==0 and b==0 was handled above
             ratio = min(abs(a), abs(b)) / max_val
             coef = 2.0 * ratio - 1.0
             p_val = 0.05 if ratio > 0.5 else 0.3
