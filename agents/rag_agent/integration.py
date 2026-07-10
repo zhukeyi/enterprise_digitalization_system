@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -28,7 +29,7 @@ from agents.rag_agent import (
     VectorStore,
     chunk_documents,
 )
-from agents.rag_agent.embeddings import EmbeddingConfig, EmbeddingModel
+from agents.rag_agent.embeddings import EmbeddingConfig, EmbeddingError, EmbeddingModel
 
 logger = logging.getLogger("fde.rag.integration")
 
@@ -40,12 +41,24 @@ _embedding_model_instance: EmbeddingModel | None = None
 # Default collection name for RAG operations
 _DEFAULT_COLLECTION = "fde_knowledge"
 
+# Namespace for deriving stable UUID point IDs from chunk IDs.
+# Qdrant requires point IDs to be unsigned ints or UUIDs, while our
+# chunk IDs are path-based strings. We hash them to a UUID so the BM25
+# index and the Qdrant vector store share one ID space (required for
+# correct RRF fusion and result enrichment).
+_CHUNK_ID_NAMESPACE = uuid.NAMESPACE_URL
+
 
 def _get_vector_store() -> VectorStore:
-    """Get or create a singleton VectorStore instance."""
+    """Get or create a singleton VectorStore instance.
+
+    Defaults to the RAG knowledge collection so search/ingest share the
+    same collection name (QdrantConfig's own default is 'fde_documents',
+    which would otherwise diverge from the integration's _DEFAULT_COLLECTION).
+    """
     global _vector_store_instance
     if _vector_store_instance is None:
-        _vector_store_instance = VectorStore(QdrantConfig())
+        _vector_store_instance = VectorStore(QdrantConfig(collection_name=_DEFAULT_COLLECTION))
     return _vector_store_instance
 
 
@@ -157,6 +170,7 @@ async def _rag_search_handler(query: str, top_k: int = 5) -> dict[str, Any]:
                 {
                     "content": r.content[:200],
                     "score": r.score,
+                    "vector_score": r.vector_score,
                     "source": r.source or r.metadata.get("source", "unknown"),
                     "chunk_id": r.id,
                 }
@@ -228,7 +242,9 @@ async def _rag_answer_handler(
 
     # Step 3: Extractive summarization (deterministic, no LLM needed)
     top_chunk = context_chunks[0]
-    top_score = float(top_chunk.get("score", 0.0))
+    # Confidence should reflect the actual semantic similarity (vector_score),
+    # not the RRF fusion score (which is rank-based and ~0.016 for any query).
+    top_score = float(top_chunk.get("vector_score") or top_chunk.get("score", 0.0))
     confidence = min(top_score, 1.0)
 
     # Primary answer: top-scoring chunk content
@@ -291,12 +307,18 @@ def _rag_ingest_sync(
     try:
         vector_store = _get_vector_store()
 
-        # Create collection if needed
-        collection_config = CollectionConfig(name=collection_name)
-        vector_store.create_collection(collection_config)
-
         # Get embedding model (lazy load on first call)
         embedding_model = _get_embedding_model()
+
+        # Force-load the model so we know its true embedding dimension,
+        # then create the collection with a matching vector size.
+        try:
+            _ = embedding_model.model  # triggers lazy load / download
+        except EmbeddingError as e:
+            logger.warning("Embedding model unavailable, using default dim 1024: %s", e)
+        vector_size = embedding_model.get_dimension()
+        collection_config = CollectionConfig(name=collection_name, vector_size=vector_size)
+        vector_store.create_collection(collection_config)
 
         ingested_count = 0
         errors: list[str] = []
@@ -320,7 +342,13 @@ def _rag_ingest_sync(
 
                 # Batch embed all chunks from this document
                 chunk_texts = [c.content for c in chunks]
-                chunk_ids = [c.chunk_id or f"chunk-{c.chunk_index}" for c in chunks]
+                # Qdrant requires point IDs to be unsigned ints or UUIDs,
+                # but chunk IDs are path-based strings. Derive a stable
+                # UUID so BM25 and the vector store share one ID space.
+                chunk_ids = [
+                    str(uuid.uuid5(_CHUNK_ID_NAMESPACE, c.chunk_id or f"chunk-{c.chunk_index}"))
+                    for c in chunks
+                ]
 
                 if chunk_texts:
                     # Generate embeddings via BGE-M3
@@ -331,13 +359,14 @@ def _rag_ingest_sync(
                     from agents.rag_agent.vector_store import VectorRecord
 
                     records = []
-                    for chunk, vec in zip(chunks, vectors, strict=True):
+                    for chunk, vec, cid in zip(chunks, vectors, chunk_ids, strict=True):
                         vr = VectorRecord(
-                            id=chunk.chunk_id or f"chunk-{chunk.chunk_index}",
+                            id=cid,
                             vector=vec,
                             payload={
                                 "text": chunk.content,
                                 "source": chunk.source,
+                                "chunk_id": chunk.chunk_id,
                                 "chunk_index": chunk.chunk_index,
                                 "chunk_strategy": chunk.chunk_strategy,
                                 **chunk.metadata,

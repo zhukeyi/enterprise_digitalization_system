@@ -31,10 +31,40 @@ class EmbeddingResult(BaseModel):
     latency_ms: float = Field(default=0.0, description="Inference latency in ms")
 
 
+def _default_model_name() -> str:
+    """Default embedding model, overridable via env (FDE_RAG_EMBEDDING_MODEL).
+
+    Deployments that have a different model cached locally (e.g. a smaller
+    BGE variant) can switch without code changes. The Qdrant collection
+    vector size is derived from the loaded model at ingest time, so the
+    dimension stays consistent automatically.
+    """
+    import os
+
+    return os.environ.get("FDE_RAG_EMBEDDING_MODEL", "BAAI/bge-m3")
+
+
+def _default_query_instruction(model_name: str) -> str:
+    """BGE models need a query instruction prefix at retrieval time so that
+    queries and documents live in the same embedding space (otherwise
+    cosine scores are artificially low even for relevant hits).
+
+    - bge-m3 (multilingual): English instruction from the BGE training recipe.
+    - Chinese BGE variants (bge-small-zh, bge-base-zh, ...): Chinese instruction.
+    - others: no prefix.
+    """
+    name = model_name.lower()
+    if "bge-m3" in name:
+        return "Represent this sentence for searching relevant passages:"
+    if "bge" in name and ("zh" in name or "small" in name or "base" in name):
+        return "为这个句子生成表示以用于检索相关文章："
+    return ""
+
+
 class EmbeddingConfig(BaseModel):
     """Configuration for the embedding model."""
 
-    model_name: str = Field(default="BAAI/bge-m3", description="HuggingFace model name")
+    model_name: str = Field(default_factory=_default_model_name, description="HuggingFace model name")
     device: Literal["cpu", "cuda", "mps"] = Field(default="cpu", description="Inference device")
     batch_size: int = Field(default=8, ge=1, le=128, description="Max batch size")
     max_seq_length: int = Field(default=8192, description="Maximum sequence length (BGE-M3: 8192)")
@@ -42,7 +72,8 @@ class EmbeddingConfig(BaseModel):
     use_fp16: bool = Field(default=False, description="Use half precision")
     show_progress: bool = Field(default=False, description="Show progress bar")
     query_instruction: str = Field(
-        default="", description="Prefix for query embeddings (RAG retrieval)"
+        default_factory=lambda: _default_query_instruction(_default_model_name()),
+        description="Prefix for query embeddings (RAG retrieval)",
     )
 
 

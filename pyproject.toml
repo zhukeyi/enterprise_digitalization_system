@@ -42,7 +42,7 @@ router = [
 
 # ── RAG Agent ─────────────────────────────────────────────────────
 rag = [
-    "qdrant-client>=1.11.0,<1.14",  # Pinned: server runs Qdrant v1.13.2
+    "qdrant-client>=1.12.0,<2.0",  # >=1.12 for query_points API (search() removed in 1.14); <2.0 keeps v1 line
     "sentence-transformers>=3.1.0",
     "torch>=2.3.0",
     "langchain>=0.3.0",

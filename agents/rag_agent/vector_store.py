@@ -433,22 +433,17 @@ class VectorStore:
             exact=False,
         )
 
-        results = self.client.search(
-            collection_name=collection,
-            query_vector=vector,
-            limit=top_k,
-            search_params=search_params,
-            query_filter=query_filter,
-            score_threshold=score_threshold,
+        points = _execute_search(
+            self.client, collection, vector, top_k, search_params, query_filter, score_threshold
         )
 
         return [
             VectorRecord(
-                id=r.id,
-                payload=r.payload,
-                score=r.score,
+                id=p.id,
+                payload=p.payload or {},
+                score=p.score or 0.0,
             )
-            for r in results
+            for p in points
         ]
 
     async def async_search(
@@ -473,22 +468,34 @@ class VectorStore:
             exact=False,
         )
 
-        results = await self.async_client.search(
-            collection_name=collection,
-            query_vector=vector,
-            limit=top_k,
-            search_params=search_params,
-            query_filter=query_filter,
-            score_threshold=score_threshold,
-        )
+        if hasattr(self.async_client, "query_points"):
+            response = await self.async_client.query_points(
+                collection_name=collection,
+                query=vector,
+                limit=top_k,
+                search_params=search_params,
+                query_filter=query_filter,
+                score_threshold=score_threshold,
+                with_payload=True,
+            )
+            points = list(response.points)
+        else:
+            points = await self.async_client.search(
+                collection_name=collection,
+                query_vector=vector,
+                limit=top_k,
+                search_params=search_params,
+                query_filter=query_filter,
+                score_threshold=score_threshold,
+            )
 
         return [
             VectorRecord(
-                id=r.id,
-                payload=r.payload,
-                score=r.score,
+                id=p.id,
+                payload=p.payload or {},
+                score=p.score or 0.0,
             )
-            for r in results
+            for p in points
         ]
 
     def count(self, collection: str | None = None) -> int:
@@ -585,3 +592,46 @@ def _build_filter_conditions(
             )
 
     return must_conditions
+
+
+def _execute_search(
+    client: Any,
+    collection: str,
+    vector: list[float],
+    top_k: int,
+    search_params: Any,
+    query_filter: Any,
+    score_threshold: float | None,
+) -> list[Any]:
+    """Run a vector similarity search.
+
+    Uses the modern ``query_points`` API (qdrant-client >= 1.12) and
+    transparently falls back to the legacy ``search`` API on older
+    clients. Both return point-like objects exposing ``.id`` / ``.score``
+    / ``.payload``.
+
+    The qdrant-client removed ``client.search`` in 1.14+, so pinning the
+    modern API alone would break on older installs; the fallback keeps
+    the store compatible across all 1.11+ releases.
+    """
+    if hasattr(client, "query_points"):
+        response = client.query_points(
+            collection_name=collection,
+            query=vector,
+            limit=top_k,
+            search_params=search_params,
+            query_filter=query_filter,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
+        return list(response.points)
+    return list(
+        client.search(
+            collection_name=collection,
+            query_vector=vector,
+            limit=top_k,
+            search_params=search_params,
+            query_filter=query_filter,
+            score_threshold=score_threshold,
+        )
+    )
