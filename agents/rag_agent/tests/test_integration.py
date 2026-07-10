@@ -100,6 +100,7 @@ class TestRAGIntegration:
             patch("agents.rag_agent.integration.VectorStore") as mock_store_cls,
             patch("agents.rag_agent.integration.ParserFactory") as mock_parser_cls,
             patch("agents.rag_agent.integration.chunk_documents") as mock_chunk,
+            patch("agents.rag_agent.integration._get_embedding_model") as mock_embed,
         ):
 
             mock_store = mock_store_cls.return_value
@@ -112,7 +113,20 @@ class TestRAGIntegration:
             mock_parsed = MagicMock()
             mock_parser.parse.return_value = mock_parsed
 
-            mock_chunk.return_value = [MagicMock()]
+            mock_chunk_obj = MagicMock()
+            mock_chunk_obj.content = "test content"
+            mock_chunk_obj.chunk_id = "chunk-0"
+            mock_chunk_obj.chunk_index = 0
+            mock_chunk_obj.source = "test"
+            mock_chunk_obj.chunk_strategy = "fixed"
+            mock_chunk_obj.metadata = {}
+            mock_chunk.return_value = [mock_chunk_obj]
+
+            mock_embed_model = MagicMock()
+            mock_embed_result = MagicMock()
+            mock_embed_result.vector = [0.1] * 1024
+            mock_embed_model._embed_sync.return_value = [mock_embed_result]
+            mock_embed.return_value = mock_embed_model
 
             result = asyncio.run(
                 _rag_ingest_handler(

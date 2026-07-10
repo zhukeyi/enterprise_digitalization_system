@@ -28,12 +28,17 @@ from agents.rag_agent import (
     VectorStore,
     chunk_documents,
 )
+from agents.rag_agent.embeddings import EmbeddingConfig, EmbeddingModel
 
 logger = logging.getLogger("fde.rag.integration")
 
-# Module-level cached VectorStore singleton (avoids creating new Qdrant
-# connections on every _rag_ingest_handler call)
+# Module-level cached singletons (avoids creating new Qdrant connections
+# and reloading the embedding model on every call)
 _vector_store_instance: VectorStore | None = None
+_embedding_model_instance: EmbeddingModel | None = None
+
+# Default collection name for RAG operations
+_DEFAULT_COLLECTION = "fde_knowledge"
 
 
 def _get_vector_store() -> VectorStore:
@@ -44,10 +49,30 @@ def _get_vector_store() -> VectorStore:
     return _vector_store_instance
 
 
+def _get_embedding_model() -> EmbeddingModel:
+    """Get or create a singleton EmbeddingModel instance.
+
+    The BGE-M3 model is lazily loaded on first use (first embed call
+    takes ~60s for model loading; subsequent calls are fast).
+    """
+    global _embedding_model_instance
+    if _embedding_model_instance is None:
+        _embedding_model_instance = EmbeddingModel(EmbeddingConfig())
+    return _embedding_model_instance
+
+
 def _reset_vector_store() -> None:
     """Reset the VectorStore singleton (for testing)."""
     global _vector_store_instance
     _vector_store_instance = None
+
+
+def _reset_embedding_model() -> None:
+    """Reset the EmbeddingModel singleton (for testing)."""
+    global _embedding_model_instance
+    if _embedding_model_instance is not None:
+        _embedding_model_instance.unload()
+    _embedding_model_instance = None
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -55,12 +80,43 @@ def _reset_vector_store() -> None:
 # ══════════════════════════════════════════════════════════════════
 
 
+# ══════════════════════════════════════════════════════════════════
+# Shared BM25 Index (populated by rag_ingest, used by rag_search)
+# ══════════════════════════════════════════════════════════════════
+
+_bm25_engine: HybridSearchEngine | None = None
+
+
+def _rebuild_bm25_index(texts: list[str], ids: list[str]) -> None:
+    """Rebuild the shared BM25 index after ingesting new documents.
+
+    This index is used by _rag_search_handler for the BM25 leg of
+    hybrid search. The vector leg queries Qdrant directly.
+    """
+    global _bm25_engine
+    try:
+        vs = _get_vector_store()
+        em = _get_embedding_model()
+    except Exception:
+        vs = None  # type: ignore[assignment]
+        em = None  # type: ignore[assignment]
+
+    _bm25_engine = HybridSearchEngine(
+        vector_store=vs,
+        embedding_model=em,
+        config=HybridSearchConfig(),
+    )
+    _bm25_engine.index_documents(texts, ids)
+    logger.info("BM25 index rebuilt with %d chunks", len(texts))
+
+
 async def _rag_search_handler(query: str, top_k: int = 5) -> dict[str, Any]:
     """Execute hybrid search via BM25 + vector + RRF fusion.
 
-    NOTE: The hybrid search engine must have documents indexed before use.
-    Use rag_ingest first to populate the vector store / BM25 index.
-    Without indexed documents, this returns an empty result set.
+    Uses the singleton VectorStore and EmbeddingModel for vector search,
+    plus an in-memory BM25 index built from documents ingested via
+    rag_ingest. If the embedding model or vector store is unavailable,
+    degrades gracefully to BM25-only search.
 
     Args:
         query: Search query string.
@@ -71,7 +127,27 @@ async def _rag_search_handler(query: str, top_k: int = 5) -> dict[str, Any]:
     """
     try:
         config = HybridSearchConfig(top_k_final=top_k)
-        engine = HybridSearchEngine(config=config)
+
+        # Use the shared engine (built by rag_ingest with both BM25 index
+        # and vector store + embedding model). If not yet built (no docs
+        # ingested), create a fresh one with vector search only.
+        global _bm25_engine
+        if _bm25_engine is not None:
+            _bm25_engine.config = config
+            engine = _bm25_engine
+        else:
+            try:
+                vs = _get_vector_store()
+                em = _get_embedding_model()
+                engine = HybridSearchEngine(
+                    vector_store=vs,
+                    embedding_model=em,
+                    config=config,
+                )
+            except Exception as e:
+                logger.warning("Vector search components unavailable, BM25-only: %s", e)
+                engine = HybridSearchEngine(config=config)
+
         results = await engine.search(query)
 
         return {
@@ -207,7 +283,11 @@ def _rag_ingest_sync(
     documents: list[dict[str, Any]],
     collection_name: str = "fde_knowledge",
 ) -> dict[str, Any]:
-    """Synchronous implementation of RAG ingest (offloaded to thread)."""
+    """Synchronous implementation of RAG ingest (offloaded to thread).
+
+    Full pipeline: parse → chunk → embed (BGE-M3) → upsert to Qdrant.
+    Also builds the in-memory BM25 index for hybrid search.
+    """
     try:
         vector_store = _get_vector_store()
 
@@ -215,8 +295,13 @@ def _rag_ingest_sync(
         collection_config = CollectionConfig(name=collection_name)
         vector_store.create_collection(collection_config)
 
+        # Get embedding model (lazy load on first call)
+        embedding_model = _get_embedding_model()
+
         ingested_count = 0
         errors: list[str] = []
+        all_chunks_text: list[str] = []
+        all_chunks_ids: list[str] = []
 
         for doc_info in documents:
             try:
@@ -229,31 +314,52 @@ def _rag_ingest_sync(
                 parser = ParserFactory().get_parser(doc_path)
                 parsed_pages = parser.parse(doc_path)
 
-                # Chunk documents — chunk_documents now accepts the unified
-                # Document model from document_parser.py
+                # Chunk documents
                 chunks = chunk_documents(parsed_pages)
+                logger.info("Parsed %s → %d chunks", doc_path, len(chunks))
 
-                # Store chunks — convert Chunk to VectorRecord
-                from agents.rag_agent.vector_store import VectorRecord
+                # Batch embed all chunks from this document
+                chunk_texts = [c.content for c in chunks]
+                chunk_ids = [c.chunk_id or f"chunk-{c.chunk_index}" for c in chunks]
 
-                for chunk in chunks:
-                    vr = VectorRecord(
-                        id=chunk.chunk_id or f"chunk-{chunk.chunk_index}",
-                        payload={
-                            "text": chunk.content,
-                            "source": chunk.source,
-                            "chunk_index": chunk.chunk_index,
-                            "chunk_strategy": chunk.chunk_strategy,
-                            **chunk.metadata,
-                        },
-                    )
-                    vector_store.upsert(
-                        points=[vr],
-                        collection=collection_name,
-                    )
+                if chunk_texts:
+                    # Generate embeddings via BGE-M3
+                    embed_results = embedding_model._embed_sync(chunk_texts)
+                    vectors = [r.vector for r in embed_results]
+
+                    # Build VectorRecords with actual vectors
+                    from agents.rag_agent.vector_store import VectorRecord
+
+                    records = []
+                    for chunk, vec in zip(chunks, vectors, strict=True):
+                        vr = VectorRecord(
+                            id=chunk.chunk_id or f"chunk-{chunk.chunk_index}",
+                            vector=vec,
+                            payload={
+                                "text": chunk.content,
+                                "source": chunk.source,
+                                "chunk_index": chunk.chunk_index,
+                                "chunk_strategy": chunk.chunk_strategy,
+                                **chunk.metadata,
+                            },
+                        )
+                        records.append(vr)
+
+                    # Batch upsert to Qdrant
+                    vector_store.upsert(points=records, collection=collection_name)
+
+                    # Collect for BM25 index
+                    all_chunks_text.extend(chunk_texts)
+                    all_chunks_ids.extend(chunk_ids)
+
                 ingested_count += 1
+                logger.info("Ingested %s: %d chunks embedded + stored", doc_path, len(chunks))
             except (RuntimeError, ValueError, TypeError, KeyError, OSError) as e:
                 errors.append(f"Document {doc_info.get('path', '?')}: {e}")
+
+        # Rebuild BM25 index with all ingested chunks
+        if all_chunks_text:
+            _rebuild_bm25_index(all_chunks_text, all_chunks_ids)
 
         return {
             "collection": collection_name,
