@@ -45,7 +45,7 @@ onBeforeUnmount(() => {
           H
         </button>
         <button class="collapse-btn" :title="isCollapsed ? '展开' : '折叠'">
-          {{ isCollapsed ? '◀' : '▶' }}
+          {{ isCollapsed ? '▲' : '▼' }}
         </button>
       </span>
     </div>

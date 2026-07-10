@@ -29,7 +29,7 @@ onBeforeUnmount(() => {
     <div class="chat-header" @click="toggleCollapse">
       <span>🤖 FDE AI Agent</span>
       <button class="collapse-btn" :title="isCollapsed ? '展开' : '折叠'">
-        {{ isCollapsed ? '◀' : '▶' }}
+        {{ isCollapsed ? '▲' : '▼' }}
       </button>
     </div>
     <template v-if="!isCollapsed">

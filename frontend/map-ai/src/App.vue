@@ -28,10 +28,11 @@ function flyToEntity(lng: number, lat: number) {
 
   <MapView ref="mapRef" />
 
-  <aside class="side-panel">
+  <!-- Right floating dock (Agent + Notes) — same floating style as left panel -->
+  <div class="right-dock">
     <AgentChat />
     <TiptapEditor />
-  </aside>
+  </div>
 
   <!-- Floating resource panel (left side) -->
   <ResourcePanel @fly-to="flyToEntity" />
