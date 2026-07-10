@@ -184,7 +184,7 @@ onMounted(() => {
 <style scoped>
 .resource-panel {
   position: fixed;
-  top: 60px;
+  top: 108px;
   left: 12px;
   width: 300px;
   background: rgba(255, 255, 255, 0.95);
@@ -194,7 +194,7 @@ onMounted(() => {
   z-index: 9000;
   overflow: hidden;
   transition: all 0.3s ease;
-  max-height: calc(100vh - 80px);
+  max-height: calc(100vh - 128px);
   display: flex;
   flex-direction: column;
 }

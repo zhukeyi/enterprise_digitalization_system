@@ -3,7 +3,13 @@ import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Highlight from '@tiptap/extension-highlight'
 import Link from '@tiptap/extension-link'
-import { onBeforeUnmount } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
+
+const isCollapsed = ref(false)
+
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+}
 
 const editor = useEditor({
   content: '<p>FDE 地图AI分析报告</p><p>在地图上选择区域或输入查询，AI Agent 将自动生成分析报告。</p>',
@@ -26,20 +32,23 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="editor-section">
-    <div class="editor-header">
-      📝 分析笔记
-      <span class="editor-toolbar">
-        <button v-if="editor" @click="editor.chain().focus().toggleBold().run()"
+  <section class="editor-section" :class="{ collapsed: isCollapsed }">
+    <div class="editor-header" @click="toggleCollapse">
+      <span>📝 分析笔记</span>
+      <span class="editor-toolbar" @click.stop>
+        <button v-if="editor && !isCollapsed" @click="editor.chain().focus().toggleBold().run()"
           class="toolbar-btn toolbar-btn--bold">
           B
         </button>
-        <button v-if="editor" @click="editor.chain().focus().toggleHighlight().run()"
+        <button v-if="editor && !isCollapsed" @click="editor.chain().focus().toggleHighlight().run()"
           class="toolbar-btn toolbar-btn--highlight">
           H
         </button>
+        <button class="collapse-btn" :title="isCollapsed ? '展开' : '折叠'">
+          {{ isCollapsed ? '◀' : '▶' }}
+        </button>
       </span>
     </div>
-    <EditorContent :editor="editor" />
+    <EditorContent v-if="!isCollapsed" :editor="editor" />
   </section>
 </template>

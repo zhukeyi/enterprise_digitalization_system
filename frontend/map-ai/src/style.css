@@ -102,6 +102,11 @@ body { min-height: 100vh; }
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--fde-border);
+  transition: flex 0.3s ease;
+}
+
+.chat-section.collapsed {
+  flex: 0 0 auto;
 }
 
 .chat-header {
@@ -110,6 +115,11 @@ body { min-height: 100vh; }
   color: white;
   font-weight: 600;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
 
 .chat-messages {
@@ -155,6 +165,11 @@ body { min-height: 100vh; }
   height: 240px;
   display: flex;
   flex-direction: column;
+  transition: height 0.3s ease;
+}
+
+.editor-section.collapsed {
+  height: auto;
 }
 
 .editor-header {
@@ -163,6 +178,11 @@ body { min-height: 100vh; }
   color: var(--fde-text-light);
   font-weight: 600;
   border-bottom: 1px solid var(--fde-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
 
 .editor-content {
@@ -193,6 +213,33 @@ body { min-height: 100vh; }
 .toolbar-btn--highlight {
   background: var(--fde-accent-light);
   border-color: var(--fde-accent);
+}
+
+/* Collapse button (shared) */
+.collapse-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 8px;
+  line-height: 1;
+  transition: background 0.2s;
+}
+
+.collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.editor-header .collapse-btn {
+  background: var(--fde-bg);
+  color: var(--fde-text-light);
+  border: 1px solid var(--fde-border);
+}
+
+.editor-header .collapse-btn:hover {
+  background: var(--fde-border);
 }
 
 /* Message bubbles */
