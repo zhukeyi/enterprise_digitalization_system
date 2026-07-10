@@ -12,6 +12,7 @@
  */
 import { ref } from 'vue'
 import { useAnalysisStore } from '../stores/analysis'
+import { getApiBase } from '../mapai/runtime'
 import EntityCard from './EntityCard.vue'
 import VoiceTextInput from './VoiceTextInput.vue'
 import PronounHint from './PronounHint.vue'
@@ -50,10 +51,9 @@ function clearAll() {
 
 async function submitAnalysis() {
   if (!analysisStore.canAnalyze) return
-  analysisStore.setAnalyzing(true)
-  try {
-    const apiBase = import.meta.env.VITE_API_URL || '/fde-api'
-    const resp = await fetch(`${apiBase}/map/analysis`, {
+    analysisStore.setAnalyzing(true)
+    try {
+      const resp = await fetch(`${getApiBase()}/map/analysis`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

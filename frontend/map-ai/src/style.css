@@ -29,6 +29,13 @@ body { min-height: 100vh; }
   overflow: hidden;
 }
 
+/* 嵌入模式：去掉顶部 header 行，地图模块铺满 */
+#app.embed-mode {
+  display: block;
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* Header */
 .app-header {
   grid-column: 1 / -1;

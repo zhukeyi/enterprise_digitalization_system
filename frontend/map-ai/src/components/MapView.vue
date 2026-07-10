@@ -4,6 +4,11 @@ import { useAnalysisStore } from '../stores/analysis'
 import { useMarkersStore } from '../stores/markers'
 import { getProvider, getApiKey, loadMapSDK, createMap, addMapControls, switchToSatellite, switchToNormal, onMapClick, destroyMap } from '../composables/useMap'
 
+const emit = defineEmits<{
+  'marker-click': [id: string, lng: number, lat: number]
+  'ready': []
+}>()
+
 const store = useAnalysisStore()
 const markersStore = useMarkersStore()
 const provider = getProvider()
@@ -146,6 +151,7 @@ function createBaiduMarker(
   map.value.addOverlay(marker)
 
   marker.addEventListener('click', () => {
+    emit('marker-click', id, lng, lat)
     const safeName = escapeHtml(name)
     const safeTags = tags.map((t: string) => escapeHtml(t))
     const safeNote = note ? escapeHtml(note.slice(0, 80) + (note.length > 80 ? '...' : '')) : ''
@@ -197,6 +203,7 @@ function createAmapMarker(
     : ''
 
   marker.on('click', () => {
+    emit('marker-click', _id, lng, lat)
     const html = `<div style="padding:6px 12px;font-size:13px">
       <strong>${safeName}</strong><br>
       <span style="color:#666;font-size:11px">${lng.toFixed(4)}, ${lat.toFixed(4)}</span>
@@ -286,6 +293,7 @@ onMounted(async () => {
     await loadMapSDK()
     map.value = await createMap(mapContainer.value)
     addMapControls(map.value)
+    emit('ready')
 
     // 点击事件
     onMapClick(map.value, handleMapClick)
@@ -309,12 +317,12 @@ onUnmounted(() => {
 })
 
 // Expose map and helper functions
-function flyTo(lng: number, lat: number) {
+function flyTo(lng: number, lat: number, zoom = 14) {
   if (!map.value) return
   if (provider === 'baidu') {
-    map.value.flyTo?.({ lng, lat }, 14) || map.value.centerAndZoom(new (window as any).BMapGL.Point(lng, lat), 14)
+    map.value.flyTo?.({ lng, lat }, zoom) || map.value.centerAndZoom(new (window as any).BMapGL.Point(lng, lat), zoom)
   } else {
-    map.value.setZoomAndCenter(14, [lng, lat])
+    map.value.setZoomAndCenter(zoom, [lng, lat])
   }
 }
 defineExpose({ map: map, flyTo })

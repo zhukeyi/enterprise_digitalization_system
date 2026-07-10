@@ -1,14 +1,16 @@
 import { defineStore } from 'pinia'
+import { getRuntimeConfig, getApiBase } from '../mapai/runtime'
 
 /**
  * Markers Store — Server-persisted map markers with auto-tagging (v2.0).
  *
  * Manages:
- * - markers: all saved markers (synced from backend)
+ * - markers: all saved markers (synced from backend OR injected statically)
  * - searchQuery / selectedTags: client-side filtering state
  * - isLoading / error: loading state
  *
  * Backend API: /map/markers (GET, POST, PUT, DELETE)
+ * 嵌入（即插即用）模式下 markersBackend=false，则完全本地化，不请求后端。
  */
 
 export interface MarkerData {
@@ -26,8 +28,6 @@ export interface TagInfo {
   tag: string
   count: number
 }
-
-const API_BASE = import.meta.env.VITE_API_URL || '/fde-api'
 
 export const useMarkersStore = defineStore('markers', {
   state: () => ({
@@ -77,12 +77,42 @@ export const useMarkersStore = defineStore('markers', {
   },
 
   actions: {
-    /** Fetch all markers from the backend */
+    /** 是否连接后端（嵌入静态数据模式下为 false） */
+    get backendEnabled(): boolean {
+      return getRuntimeConfig().markersBackend
+    },
+
+    /** 用外部数据一次性播种点位（静态/远端数据源） */
+    seedMarkers(list: Array<Partial<MarkerData> & { id: string; name: string; lng: number; lat: number }>) {
+      this.markers = list.map((m) => ({
+        id: m.id,
+        name: m.name,
+        lng: m.lng,
+        lat: m.lat,
+        note: m.note ?? '',
+        tags: m.tags ?? [],
+        created_at: m.created_at ?? new Date().toISOString(),
+        updated_at: m.updated_at ?? new Date().toISOString(),
+      }))
+      this.recomputeTags()
+    },
+
+    /** 仅由本地 markers 重新计算标签计数 */
+    recomputeTags() {
+      const counter = new Map<string, number>()
+      for (const m of this.markers) {
+        for (const t of m.tags) counter.set(t, (counter.get(t) || 0) + 1)
+      }
+      this.allTags = Array.from(counter.entries()).map(([tag, count]) => ({ tag, count }))
+    },
+
+    /** Fetch all markers from the backend (静态模式跳过) */
     async fetchMarkers() {
+      if (!this.backendEnabled) return
       this.isLoading = true
       this.error = ''
       try {
-        const resp = await fetch(`${API_BASE}/map/markers`)
+        const resp = await fetch(`${getApiBase()}/map/markers`)
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
         this.markers = await resp.json()
       } catch (err: any) {
@@ -95,8 +125,12 @@ export const useMarkersStore = defineStore('markers', {
 
     /** Fetch all tags with counts */
     async fetchTags() {
+      if (!this.backendEnabled) {
+        this.recomputeTags()
+        return
+      }
       try {
-        const resp = await fetch(`${API_BASE}/map/markers/tags`)
+        const resp = await fetch(`${getApiBase()}/map/markers/tags`)
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
         this.allTags = await resp.json()
       } catch (err: any) {
@@ -111,8 +145,23 @@ export const useMarkersStore = defineStore('markers', {
       lat: number
       note?: string
     }): Promise<MarkerData | null> {
+      if (!this.backendEnabled) {
+        const marker: MarkerData = {
+          id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: data.name,
+          lng: data.lng,
+          lat: data.lat,
+          note: data.note ?? '',
+          tags: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        this.markers.push(marker)
+        this.recomputeTags()
+        return marker
+      }
       try {
-        const resp = await fetch(`${API_BASE}/map/markers`, {
+        const resp = await fetch(`${getApiBase()}/map/markers`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
@@ -134,8 +183,19 @@ export const useMarkersStore = defineStore('markers', {
       id: string,
       data: { name?: string; note?: string },
     ): Promise<MarkerData | null> {
+      if (!this.backendEnabled) {
+        const idx = this.markers.findIndex((m) => m.id === id)
+        if (idx === -1) return null
+        this.markers[idx] = {
+          ...this.markers[idx],
+          ...data,
+          updated_at: new Date().toISOString(),
+        }
+        this.recomputeTags()
+        return this.markers[idx]
+      }
       try {
-        const resp = await fetch(`${API_BASE}/map/markers/${id}`, {
+        const resp = await fetch(`${getApiBase()}/map/markers/${id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
@@ -155,8 +215,13 @@ export const useMarkersStore = defineStore('markers', {
 
     /** Delete a marker by ID */
     async deleteMarker(id: string): Promise<boolean> {
+      if (!this.backendEnabled) {
+        this.markers = this.markers.filter((m) => m.id !== id)
+        this.recomputeTags()
+        return true
+      }
       try {
-        const resp = await fetch(`${API_BASE}/map/markers/${id}`, {
+        const resp = await fetch(`${getApiBase()}/map/markers/${id}`, {
           method: 'DELETE',
         })
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)

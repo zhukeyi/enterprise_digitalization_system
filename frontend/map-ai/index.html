@@ -5,8 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>map-ai</title>
-    <!-- 百度地图 WebGL — 必须在页面解析阶段加载（因使用 document.write） -->
-    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=x7vGEPur6u8WQV3vgNlDc66d1fHWMlas"></script>
+    <!-- 地图 SDK 改为运行时按需异步加载（见 src/composables/useMap.ts），
+         支持嵌入场景通过 URL 参数 / mount 配置动态指定 AK，无需写死。 -->
   </head>
   <body>
     <div id="app"></div>

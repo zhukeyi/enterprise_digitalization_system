@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MapAI 即插即用 · 集成演示</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #f5f7fa; color: #2d3748; }
+    header { padding: 16px 24px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    header h1 { margin: 0; font-size: 18px; color: #1a73e8; }
+    header p { margin: 4px 0 0; font-size: 13px; color: #718096; }
+    .layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px; height: calc(100vh - 120px); }
+    .panel { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 12px rgba(26,115,232,.08); overflow: auto; }
+    .panel h2 { font-size: 14px; margin: 0 0 12px; }
+    button { display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: #1a73e8; color: #fff; font-size: 13px; cursor: pointer; }
+    button.ghost { background: #eef2f7; color: #1a73e8; }
+    .log { font-family: ui-monospace, Menlo, monospace; font-size: 11px; background: #0f172a; color: #cbd5e1; border-radius: 8px; padding: 10px; height: 200px; overflow: auto; white-space: pre-wrap; }
+    iframe { width: 100%; height: 100%; border: 0; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FDE MapAI · 第三方看板集成演示</h1>
+    <p>下方 iframe 直接加载 <code>/fde/?embed=1</code>，通过 postMessage 注入数据与接收事件 —— 无需任何 FDE 后端。</p>
+  </header>
+
+  <div class="layout">
+    <div class="panel">
+      <h2>控制（host 侧）</h2>
+      <button id="btn-load">注入示例实体 + 点位</button>
+      <button id="btn-fly" class="ghost">飞行到杭州东站</button>
+      <button id="btn-analyze" class="ghost">提交关联分析（需后端）</button>
+      <button id="btn-clear" class="ghost">清空实体</button>
+      <h2 style="margin-top:16px">事件日志（iframe → host）</h2>
+      <div class="log" id="log"></div>
+    </div>
+
+    <iframe id="mapai" src="https://217.142.246.70:8443/fde/?embed=1&provider=baidu&features=resourcePanel,analysis,markerAdd"></iframe>
+  </div>
+
+  <script>
+    const frame = document.getElementById('mapai')
+    const log = document.getElementById('log')
+    const post = (type, payload) =>
+      frame.contentWindow.postMessage({ source: 'fde-mapai-host', type, payload }, '*')
+
+    function addLog(s) {
+      log.textContent += s + '\n'
+      log.scrollTop = log.scrollHeight
+    }
+
+    const entities = [
+      { id: 'e1', name: '杭州东站', type: '高铁站', lng: 120.212, lat: 30.291 },
+      { id: 'e2', name: '西湖文化广场', type: '商圈', lng: 120.165, lat: 30.279 },
+      { id: 'e3', name: '钱江新城', type: 'CBD', lng: 120.211, lat: 30.245 },
+    ]
+    const markers = [
+      { id: 'm1', name: '客户A门店', lng: 120.15, lat: 30.27, note: '核心门店', tags: ['VIP', '门店'] },
+      { id: 'm2', name: '仓储中心', lng: 120.20, lat: 30.31, note: '华东仓', tags: ['仓储'] },
+    ]
+
+    frame.onload = () => addLog('iframe 已加载，等待 ready ...')
+
+    document.getElementById('btn-load').onclick = () => {
+      post('loadEntities', { entities })
+      post('loadMarkers', { markers })
+      addLog('已注入 3 实体 + 2 点位')
+    }
+    document.getElementById('btn-fly').onclick = () => {
+      post('flyTo', { lng: 120.212, lat: 30.291, zoom: 14 })
+      addLog('flyTo 杭州东站')
+    }
+    document.getElementById('btn-analyze').onclick = () => post('analyze', {})
+    document.getElementById('btn-clear').onclick = () => post('clear', {})
+
+    window.addEventListener('message', (e) => {
+      if (e.data?.source !== 'fde-mapai') return
+      const p = e.data.payload || {}
+      if (e.data.type === 'ready') addLog('✅ ready v' + p.version)
+      else if (e.data.type === 'markerClick') addLog('📍 markerClick ' + p.id)
+      else if (e.data.type === 'entitySelect') addLog('➕ entitySelect ' + p.name)
+      else if (e.data.type === 'analysisResult') addLog('📊 analysisResult ' + (p.result?.status || 'ok'))
+      else if (e.data.type === 'error') addLog('⚠️ error ' + p.message)
+    })
+  </script>
+</body>
+</html>
