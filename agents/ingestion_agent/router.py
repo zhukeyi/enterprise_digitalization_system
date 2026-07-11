@@ -1,8 +1,9 @@
-"""Ingestion Agent — HTTP 路由（P2a / MVS 核心）。
+"""Ingestion Agent — HTTP 路由（P2a / MVS 核心 + P2b 文件入库）。
 
 挂载到 FastAPI 主应用后提供：
 
-* ``POST /ingest/upload``  — 上传 Excel（仅 .xlsx/.xlsm）→ 归一化入库 + 进 Qdrant
+* ``POST /ingest/upload``  — 上传本地文件（xlsx/xlsm/csv/pdf/docx/pptx）→ 归一化
+  入库 + 进 Qdrant（P2b 起支持多格式；P2a 仅 Excel 的部分仍兼容）
 * ``POST /api/data/ask``  — 基于已入库数据的检索问答（MVS 对话页后端）
 
 所有重依赖（DB session / 向量库 / 嵌入模型）通过 ``Depends`` 注入，便于测试用
@@ -11,6 +12,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -25,6 +27,11 @@ from agents.rag_agent.embeddings import EmbeddingModel
 from agents.rag_agent.vector_store import VectorStore
 
 router = APIRouter(tags=["ingestion"])
+
+# 受支持的上传扩展名（P2b 起）
+ALLOWED_EXTENSIONS = {".xlsx", ".xlsm", ".csv", ".pdf", ".docx", ".pptx"}
+# 上传大小上限（20MB），H2b 会补更严格的 magic-bytes 校验
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 class AskRequest(BaseModel):
@@ -45,33 +52,50 @@ class AskResponse(BaseModel):
 
 
 @router.post("/ingest/upload")
-async def upload_excel(
+async def upload_file(
     file: UploadFile = File(...),
-    doc_type: str = Form("excel_upload"),
+    doc_type: str = Form("file_upload"),
     session: AsyncSession = Depends(get_async_session),
     vector_store: VectorStore = Depends(get_vector_store),
     embedding_model: EmbeddingModel = Depends(get_embedding_model),
 ) -> dict[str, Any]:
-    """上传 Excel 并入库（归一化 → Postgres + Qdrant）。
+    """上传本地文件并入库（解析 → 三层归一化 → 父子 chunk → Postgres + Qdrant）。
 
-    仅接受 ``.xlsx`` / ``.xlsm``（openpyxl 不支持旧版 ``.xls``）。
+    支持 ``.xlsx / .xlsm / .csv / .pdf / .docx / .pptx``。Excel 走 P2a 的
+    ``ingest_excel``（保留零配置 identity 路径），其余格式走 P2b 的 ``ingest_file``。
     """
     filename = file.filename or ""
-    if not filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="仅支持 .xlsx / .xlsm 文件")
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型：{ext or '无扩展名'}，仅支持 {sorted(ALLOWED_EXTENSIONS)}",
+        )
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="上传文件为空")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="文件超过 20MB 上限")
 
     try:
-        result = await IngestionPipeline.ingest_excel(
-            data,
-            filename,
-            doc_type=doc_type,
-            session=session,
-            vector_store=vector_store,
-            embedding_model=embedding_model,
-        )
+        if ext in (".xlsx", ".xlsm"):
+            result = await IngestionPipeline.ingest_excel(
+                data,
+                filename,
+                doc_type=doc_type,
+                session=session,
+                vector_store=vector_store,
+                embedding_model=embedding_model,
+            )
+        else:
+            result = await IngestionPipeline.ingest_file(
+                filename,
+                data,
+                doc_type=doc_type,
+                session=session,
+                vector_store=vector_store,
+                embedding_model=embedding_model,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:

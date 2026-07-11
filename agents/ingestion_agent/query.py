@@ -15,9 +15,10 @@ from agents.rag_agent.vector_store import VectorStore
 def _synthesize(query: str, sources: list[dict[str, Any]]) -> str:
     """把命中的来源合成为一句答案（MVS 默认模板；保证数据可见即「命中」）。"""
     if not sources:
-        return "未在知识库中找到相关内容。请先通过「上传」页导入 Excel 数据。"
+        return "未在知识库中找到相关内容。请先通过「上传」页导入数据文件。"
     top = sources[0]
-    text = top.get("text", "")
+    # 优先回带父块上下文（父子 chunk），否则回退子块文本
+    text = top.get("parent_text") or top.get("text", "")
     return f"根据已上传的数据，找到 {len(sources)} 条相关记录。最相关的一条：\n{text}"
 
 

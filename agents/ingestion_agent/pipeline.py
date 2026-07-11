@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agents.ingestion_agent.chunking import build_text_chunks, render_table
 from agents.ingestion_agent.database.models import (
     CanonicalDocument as CanonicalDocumentORM,
 )
@@ -32,6 +33,8 @@ from agents.ingestion_agent.mapping_loader import (
     normalize_field_name,
     normalize_rows,
 )
+from agents.ingestion_agent.normalization import normalize_table_rows, normalize_text_block
+from agents.ingestion_agent.parsers import BlockType, parse_file
 from agents.rag_agent.embeddings import EmbeddingModel
 from agents.rag_agent.vector_store import CollectionConfig, VectorRecord, VectorStore
 
@@ -266,6 +269,184 @@ class IngestionPipeline:
             vector_store=vector_store,
             embedding_model=embedding_model,
         )
+
+    @staticmethod
+    async def ingest_file(
+        filename: str,
+        data: bytes,
+        *,
+        doc_type: str | None = None,
+        source_ref: str | None = None,
+        session: AsyncSession,
+        vector_store: VectorStore,
+        embedding_model: EmbeddingModel,
+    ) -> dict[str, Any]:
+        """解析任意受支持的文件（pdf/docx/pptx/csv/xlsx…）→ 三层归一化 → 父子
+        chunk → 落库 Postgres + 进 Qdrant（P2b / 完整本地文件入库）。
+
+        Args:
+            filename: 原始文件名（用于类型判定与默认 doc_type / source_ref）。
+            data: 文件字节。
+            doc_type: 可选覆盖默认文档类型（默认按文件类型推导）。
+            source_ref: 可选覆盖数据源引用。
+            session / vector_store / embedding_model: 注入依赖。
+
+        Returns:
+            入库摘要：doc_type / filename / blocks / canonical / chunks / raw_id 等。
+        """
+        parsed = parse_file(filename, data)
+        effective_doc_type = doc_type or parsed.doc_type or Path(filename).stem or DEFAULT_DOC_TYPE
+        effective_source_ref = source_ref or f"local://{filename}"
+
+        raw = RawDocument(
+            source_type="file_upload",
+            source_ref=effective_source_ref,
+            content_type=parsed.meta.get("content_type"),
+            raw_payload={
+                "filename": filename,
+                "blocks": len(parsed.blocks),
+                "file_type": parsed.meta.get("file_type"),
+            },
+        )
+        session.add(raw)
+        await session.flush()
+
+        # pending: (chunk_id, child_text, payload) —— 先收齐，提交后再批量嵌入。
+        pending: list[tuple[str, str, dict[str, Any]]] = []
+        canonical_count = 0
+
+        for bi, block in enumerate(parsed.blocks):
+            if block.kind == BlockType.TABLE:
+                headers = block.table_headers or []
+                rows = block.table or []
+                cds = normalize_table_rows(headers, rows, doc_type=effective_doc_type)
+                for ri, cd in enumerate(cds):
+                    title = IngestionPipeline._improve_title(cd, canonical_count)
+                    safe = {k: _to_json_safe(v) for k, v in cd.fields.items()}
+                    content_hash = compute_content_hash(safe)
+                    orm = CanonicalDocumentORM(
+                        raw_document_id=raw.id,
+                        doc_type=cd.doc_type,
+                        title=title,
+                        canonical_payload=safe,
+                        storage_ref=f"{effective_source_ref}#t{bi}r{ri}",
+                        source_connector="file_upload",
+                        content_hash=content_hash,
+                    )
+                    session.add(orm)
+                    await session.flush()
+                    canonical_count += 1
+
+                    child_text = "\n".join(
+                        f"{k}: {safe[k]}" for k in safe if safe[k] not in (None, "")
+                    )
+                    parent_text = render_table(headers, rows)
+                    chunk = DocumentChunk(
+                        canonical_document_id=orm.id,
+                        chunk_index=0,
+                        content=child_text,
+                        token_count=len(child_text),
+                    )
+                    session.add(chunk)
+                    await session.flush()
+                    chunk.embedding_id = chunk.id
+                    pending.append(
+                        (
+                            chunk.id,
+                            child_text,
+                            {
+                                "block_kind": "table",
+                                "row_index": ri,
+                                "doc_type": cd.doc_type,
+                                "title": title,
+                                "text": child_text,
+                                "parent_text": parent_text,
+                                "canonical": safe,
+                                "source": effective_source_ref,
+                                "raw_id": raw.id,
+                                **block.loc,
+                            },
+                        )
+                    )
+            elif block.kind in (BlockType.TEXT, BlockType.HEADING):
+                clean = normalize_text_block(block.text)
+                if not clean.strip():
+                    continue
+                title = f"{Path(filename).name} {block.loc}" if block.loc else effective_source_ref
+                content_hash = compute_content_hash({"text": clean})
+                orm = CanonicalDocumentORM(
+                    raw_document_id=raw.id,
+                    doc_type=effective_doc_type,
+                    title=title,
+                    canonical_payload={"text": clean[:2000]},
+                    storage_ref=f"{effective_source_ref}#b{bi}",
+                    source_connector="file_upload",
+                    content_hash=content_hash,
+                )
+                session.add(orm)
+                await session.flush()
+                canonical_count += 1
+
+                child_specs = build_text_chunks(
+                    clean,
+                    doc_type=effective_doc_type,
+                    source_ref=effective_source_ref,
+                    raw_id=raw.id,
+                    loc=block.loc,
+                )
+                for ci, spec in enumerate(child_specs):
+                    chunk = DocumentChunk(
+                        canonical_document_id=orm.id,
+                        chunk_index=ci,
+                        content=spec.child_text,
+                        token_count=len(spec.child_text),
+                    )
+                    session.add(chunk)
+                    await session.flush()
+                    chunk.embedding_id = chunk.id
+                    pending.append(
+                        (
+                            chunk.id,
+                            spec.child_text,
+                            {
+                                **spec.metadata,
+                                "title": title,
+                                "text": spec.child_text,
+                                "parent_text": spec.parent_text,
+                                "canonical": {"text": clean[:2000]},
+                                "source": effective_source_ref,
+                                "doc_type": effective_doc_type,
+                            },
+                        )
+                    )
+
+        await session.commit()
+
+        child_texts = [p[1] for p in pending]
+        points = []
+        if child_texts:
+            vecs = await embedding_model.encode_documents(child_texts)
+            collection = DEFAULT_COLLECTION
+            cfg = getattr(vector_store, "config", None)
+            if cfg is not None and getattr(cfg, "collection_name", None):
+                collection = cfg.collection_name
+            for (chunk_id, _text, payload), vec in zip(pending, vecs, strict=False):
+                points.append(VectorRecord(id=chunk_id, vector=vec, payload=payload))
+            await vector_store.async_create_collection(
+                CollectionConfig(name=collection, vector_size=embedding_model.get_dimension())
+            )
+            await vector_store.async_upsert(points, collection=collection)
+
+        return {
+            "doc_type": effective_doc_type,
+            "source_ref": effective_source_ref,
+            "filename": filename,
+            "blocks": len(parsed.blocks),
+            "canonical": canonical_count,
+            "chunks": len(pending),
+            "indexed_vectors": len(points),
+            "raw_id": raw.id,
+        }
 
 
 __all__ = [

@@ -103,3 +103,6 @@ logs/
 .AppleDouble
 .LSOverride
 __MACOSX/
+
+# local snapshots / archives (not committed)
+archives/

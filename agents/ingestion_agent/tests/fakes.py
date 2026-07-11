@@ -30,7 +30,8 @@ class FakeEmbeddingModel:
 
     def _embed(self, text: str) -> list[float]:
         vec = [0.0] * self.dim
-        tokens = re.findall(r"[\w]+|[\u4e00-\u9fff]", text or "")
+        # CJK 逐字分词（保证「杭州」能命中「总部位于杭州」中的字），ASCII 词整体。
+        tokens = re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]", text or "")
         for tok in tokens:
             h = int(hashlib.md5(tok.encode("utf-8")).hexdigest(), 16) % self.dim
             vec[h] += 1.0
