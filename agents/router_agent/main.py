@@ -159,7 +159,6 @@ async def startup_event() -> None:
                 embedding_model=get_embedding_model(),
                 object_storage=get_storage(),
             )
-            print("[P6a] IngestWorker started OK", flush=True)
             logger.info("P6a IngestWorker started")
         except Exception as e:
             logger.warning("P6a worker start failed (non-fatal): %s", e)
