@@ -15,8 +15,8 @@ info:
   contact:
     name: FDE AI Platform
 servers:
-  - url: https://217.142.246.70:8443/fde-api
-    description: FDE Production Server
+  - url: http://172.18.0.1:8000
+    description: FDE Production Server (Docker internal, bypass self-signed cert)
 
 paths:
   /ingest/upload:
