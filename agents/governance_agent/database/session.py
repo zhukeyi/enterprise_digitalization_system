@@ -58,6 +58,11 @@ def _get_engine() -> AsyncEngine:
     return _engine
 
 
+def get_engine() -> AsyncEngine:
+    """Public accessor for the shared async engine (used by migrations)."""
+    return _get_engine()
+
+
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Get or create the async session factory."""
     global _async_session_factory

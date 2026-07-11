@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from agents.ingestion_agent.database.models import (
     CanonicalDocument as CanonicalDocumentORM,
 )
 from agents.ingestion_agent.database.models import DocumentChunk, RawDocument
+from agents.ingestion_agent.fts import index_canonical
 from agents.ingestion_agent.mapping_loader import (
     build_identity_mapping,
     normalize_field_name,
@@ -35,8 +37,15 @@ from agents.ingestion_agent.mapping_loader import (
 )
 from agents.ingestion_agent.normalization import normalize_table_rows, normalize_text_block
 from agents.ingestion_agent.parsers import BlockType, parse_file
+from agents.ingestion_agent.storage import (
+    ObjectStorage,
+    compute_file_hash,
+    make_storage_key,
+)
 from agents.rag_agent.embeddings import EmbeddingModel
 from agents.rag_agent.vector_store import CollectionConfig, VectorRecord, VectorStore
+
+logger = logging.getLogger("fde.ingestion.pipeline")
 
 # 归一化文档类型默认值（MVS 零配置）。
 DEFAULT_DOC_TYPE = "excel_upload"
@@ -71,6 +80,16 @@ def compute_content_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:64]
 
 
+async def _find_existing_raw(session: AsyncSession, file_hash: str) -> Any | None:
+    """按文件级 content_hash 查是否已入库（P3b 幂等：重复上传不产生幽灵文档）。"""
+    from sqlalchemy import select
+
+    from agents.ingestion_agent.database.models import RawDocument as RawDoc
+
+    res = await session.execute(select(RawDoc).where(RawDoc.content_hash == file_hash))
+    return res.scalars().first()
+
+
 class IngestionPipeline:
     """Excel 入库流水线（无状态，依赖注入）。"""
 
@@ -94,6 +113,9 @@ class IngestionPipeline:
         session: AsyncSession,
         vector_store: VectorStore,
         embedding_model: EmbeddingModel,
+        storage: ObjectStorage | None = None,
+        file_hash: str | None = None,
+        storage_ref: str | None = None,
     ) -> dict[str, Any]:
         """把一组 Excel 行归一化、落库 Postgres 并写入 Qdrant。
 
@@ -112,14 +134,31 @@ class IngestionPipeline:
         if not rows:
             raise ValueError("没有可入库的数据行（Excel 仅含表头或为空）")
 
+        # 0) 文件级幂等（P3b）：相同原始字节（file_hash）不重复产生 RawDocument / 幽灵文档。
+        if file_hash is not None:
+            existing = await _find_existing_raw(session, file_hash)
+            if existing is not None:
+                return {
+                    "doc_type": doc_type,
+                    "source_ref": source_ref,
+                    "rows": len(rows),
+                    "canonical": 0,
+                    "indexed_vectors": 0,
+                    "raw_id": existing.id,
+                    "duplicated": True,
+                    "storage_ref": existing.storage_ref,
+                }
+
         source_ref = source_ref or f"local://{doc_type}"
         canonical_docs = normalize_rows(headers, rows, doc_type=doc_type)
 
-        # 1) raw_documents：保留原始抽取
+        # 1) raw_documents：保留原始抽取（元数据；原始字节存对象存储 storage_ref）
         raw = RawDocument(
             source_type=DEFAULT_SOURCE_SYSTEM,
             source_ref=source_ref,
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_hash=file_hash,
+            storage_ref=storage_ref,
             raw_payload={"headers": headers, "row_count": len(rows)},
         )
         session.add(raw)
@@ -143,6 +182,7 @@ class IngestionPipeline:
             )
             session.add(orm)
             await session.flush()
+            await index_canonical(session, orm, raw_document_id=raw.id)
 
             text = render_canonical_text(type("CD", (), {"title": title, "fields": safe_fields})())
             session.add(
@@ -201,6 +241,7 @@ class IngestionPipeline:
         session: AsyncSession,
         vector_store: VectorStore,
         embedding_model: EmbeddingModel,
+        storage: ObjectStorage | None = None,
     ) -> dict[str, Any]:
         """从 Excel 字节解析为行，再调用 :meth:`ingest_rows`。
 
@@ -220,6 +261,26 @@ class IngestionPipeline:
             raise RuntimeError(
                 "openpyxl 未安装，无法解析 Excel。请执行 pip install openpyxl"
             ) from exc
+
+        # 文件级幂等 + 原始字节外置（P3b）
+        file_hash = compute_file_hash(data)
+        existing = await _find_existing_raw(session, file_hash)
+        if existing is not None:
+            eff_doc = doc_type or Path(filename).stem or DEFAULT_DOC_TYPE
+            eff_ref = source_ref or f"local://{filename}"
+            return {
+                "doc_type": eff_doc,
+                "source_ref": eff_ref,
+                "rows": 0,
+                "canonical": 0,
+                "indexed_vectors": 0,
+                "raw_id": existing.id,
+                "duplicated": True,
+                "storage_ref": existing.storage_ref,
+            }
+        storage_ref: str | None = None
+        if storage is not None:
+            storage_ref = await storage.put(make_storage_key(filename, file_hash), data)
 
         wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         ws = wb.active
@@ -268,6 +329,9 @@ class IngestionPipeline:
             session=session,
             vector_store=vector_store,
             embedding_model=embedding_model,
+            storage=storage,
+            file_hash=file_hash,
+            storage_ref=storage_ref,
         )
 
     @staticmethod
@@ -280,6 +344,7 @@ class IngestionPipeline:
         session: AsyncSession,
         vector_store: VectorStore,
         embedding_model: EmbeddingModel,
+        storage: ObjectStorage | None = None,
     ) -> dict[str, Any]:
         """解析任意受支持的文件（pdf/docx/pptx/csv/xlsx…）→ 三层归一化 → 父子
         chunk → 落库 Postgres + 进 Qdrant（P2b / 完整本地文件入库）。
@@ -298,10 +363,32 @@ class IngestionPipeline:
         effective_doc_type = doc_type or parsed.doc_type or Path(filename).stem or DEFAULT_DOC_TYPE
         effective_source_ref = source_ref or f"local://{filename}"
 
+        # 文件级幂等 + 原始字节外置（P3b）
+        file_hash = compute_file_hash(data)
+        existing = await _find_existing_raw(session, file_hash)
+        if existing is not None:
+            return {
+                "doc_type": effective_doc_type,
+                "source_ref": effective_source_ref,
+                "filename": filename,
+                "blocks": len(parsed.blocks),
+                "canonical": 0,
+                "chunks": 0,
+                "indexed_vectors": 0,
+                "raw_id": existing.id,
+                "duplicated": True,
+                "storage_ref": existing.storage_ref,
+            }
+        storage_ref: str | None = None
+        if storage is not None:
+            storage_ref = await storage.put(make_storage_key(filename, file_hash), data)
+
         raw = RawDocument(
             source_type="file_upload",
             source_ref=effective_source_ref,
             content_type=parsed.meta.get("content_type"),
+            content_hash=file_hash,
+            storage_ref=storage_ref,
             raw_payload={
                 "filename": filename,
                 "blocks": len(parsed.blocks),
@@ -335,6 +422,7 @@ class IngestionPipeline:
                     )
                     session.add(orm)
                     await session.flush()
+                    await index_canonical(session, orm, raw_document_id=raw.id)
                     canonical_count += 1
 
                     child_text = "\n".join(
@@ -385,6 +473,7 @@ class IngestionPipeline:
                 )
                 session.add(orm)
                 await session.flush()
+                await index_canonical(session, orm, raw_document_id=raw.id)
                 canonical_count += 1
 
                 child_specs = build_text_chunks(

@@ -12,6 +12,8 @@ from sqlalchemy.pool import StaticPool
 
 import agents.ingestion_agent.pipeline  # noqa: F401  # 注册 ingestion 表
 from agents.governance_agent.database.session import Base, get_async_session
+from agents.ingestion_agent.fts import ensure_fts_table
+from agents.ingestion_agent.storage import FakeStorage, get_storage
 from agents.ingestion_agent.store import get_embedding_model, get_vector_store
 from agents.ingestion_agent.tests.fakes import FakeEmbeddingModel, InMemoryVectorStore
 from agents.router_agent.main import app
@@ -41,6 +43,7 @@ async def client():
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await ensure_fts_table(engine)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
     fake_vs = InMemoryVectorStore()
@@ -53,6 +56,7 @@ async def client():
     app.dependency_overrides[get_async_session] = override_get_session
     app.dependency_overrides[get_vector_store] = lambda: fake_vs
     app.dependency_overrides[get_embedding_model] = lambda: fake_em
+    app.dependency_overrides[get_storage] = lambda: FakeStorage()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

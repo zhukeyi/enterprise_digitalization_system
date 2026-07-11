@@ -130,10 +130,18 @@ except ImportError:
 async def startup_event() -> None:
     """Initialize database tables on first start."""
     try:
-        from agents.governance_agent.database.session import init_database
+        from agents.governance_agent.database.session import get_engine, init_database
 
         await init_database()
         logger.info("Database tables initialized")
+        # P3b 迁移：补齐 raw_documents 新列 + 创建 canonical_fts（幂等，旧库升级安全）
+        try:
+            from agents.ingestion_agent.migration import migrate_schema
+
+            await migrate_schema(get_engine())
+            logger.info("P3b schema migration applied")
+        except Exception as e:
+            logger.warning("P3b migration skipped/failed (non-fatal): %s", e)
     except ImportError:
         logger.debug("Database not configured, skipping init")
     except Exception as e:

@@ -20,8 +20,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.governance_agent.database.session import get_async_session
+from agents.ingestion_agent.cache import Cache, get_cache
 from agents.ingestion_agent.pipeline import IngestionPipeline
 from agents.ingestion_agent.query import QueryService
+from agents.ingestion_agent.storage import ObjectStorage, get_storage
 from agents.ingestion_agent.store import get_embedding_model, get_vector_store
 from agents.rag_agent.embeddings import EmbeddingModel
 from agents.rag_agent.vector_store import VectorStore
@@ -49,6 +51,7 @@ class AskResponse(BaseModel):
     answer: str
     count: int
     sources: list[dict[str, Any]]
+    cached: bool = False
 
 
 @router.post("/ingest/upload")
@@ -58,6 +61,7 @@ async def upload_file(
     session: AsyncSession = Depends(get_async_session),
     vector_store: VectorStore = Depends(get_vector_store),
     embedding_model: EmbeddingModel = Depends(get_embedding_model),
+    storage: ObjectStorage = Depends(get_storage),
 ) -> dict[str, Any]:
     """上传本地文件并入库（解析 → 三层归一化 → 父子 chunk → Postgres + Qdrant）。
 
@@ -86,6 +90,7 @@ async def upload_file(
                 session=session,
                 vector_store=vector_store,
                 embedding_model=embedding_model,
+                storage=storage,
             )
         else:
             result = await IngestionPipeline.ingest_file(
@@ -95,6 +100,7 @@ async def upload_file(
                 session=session,
                 vector_store=vector_store,
                 embedding_model=embedding_model,
+                storage=storage,
             )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -108,8 +114,10 @@ async def ask(
     req: AskRequest,
     vector_store: VectorStore = Depends(get_vector_store),
     embedding_model: EmbeddingModel = Depends(get_embedding_model),
+    session: AsyncSession = Depends(get_async_session),
+    cache: Cache = Depends(get_cache),
 ) -> AskResponse:
-    """基于已入库数据的检索问答。"""
+    """基于已入库数据的检索问答（P3b：启用缓存 + FTS 词法召回）。"""
     try:
         result = await QueryService.ask(
             req.query,
@@ -117,6 +125,8 @@ async def ask(
             doc_type=req.doc_type,
             vector_store=vector_store,
             embedding_model=embedding_model,
+            cache=cache,
+            session=session,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -125,6 +135,7 @@ async def ask(
         answer=result["answer"],
         count=result["count"],
         sources=result["sources"],
+        cached=bool(result.get("cached", False)),
     )
 
 

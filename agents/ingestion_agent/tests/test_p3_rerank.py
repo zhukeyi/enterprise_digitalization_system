@@ -47,7 +47,6 @@ async def test_ask_rewrite_removes_stopwords_but_keeps_intent(
     session, fake_vs: InMemoryVectorStore, fake_em: FakeEmbeddingModel
 ) -> None:
     """含停用词的口语化查询（「请问 杭州 的 客户 是 哪些」）仍应命中杭州客户文档。"""
-    import csv
 
     rows = "客户名称,城市\n阿里巴巴,杭州\n腾讯,深圳\n"
     await IngestionPipeline.ingest_file(

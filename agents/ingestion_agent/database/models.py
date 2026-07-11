@@ -52,6 +52,11 @@ class RawDocument(Base):
     source_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     source_ref: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 文件级内容哈希（P3b 幂等）：相同原始字节永不产生重复 RawDocument / 幽灵文档。
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # 原始字节在对象存储中的引用（P3b）：minio://bucket/key | local://key | memory://key。
+    # 为 None 时表示原始字节未外置（旧库 / 仅元数据）。
+    storage_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
     raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JsonColumn, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
