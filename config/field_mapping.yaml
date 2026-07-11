@@ -1,0 +1,42 @@
+# field_mapping.yaml — Connector → CanonicalDocument field mapping
+#
+# SCHEMA (F6, versioned):
+#   schema_version: semver of this mapping file format
+#   connector_id:   stable connector id (must match ConnectorManifest.connector_id)
+#   doc_type:       target canonical doc_type (e.g. "sales_order")
+#   rules:
+#     - source_path: dotted path into the connector's raw payload
+#                      (supports list index, e.g. "items.0.sku")
+#       target_field: canonical field name written to CanonicalDocument.fields
+#       transform:    optional transform id (to_upper | to_iso_date | coalesce | ...)
+#       required:     true => warn if missing; false => skip silently
+#
+# This file is referenced by ConnectorManifest.field_mapping_ref and loaded by
+# shared/contracts/connector_contract.py::apply_field_mapping.
+
+schema_version: "1.0.0"
+connector_id: logistics_yonyou
+doc_type: sales_order
+
+rules:
+  - source_path: data.orderNo
+    target_field: order_no
+    required: true
+  - source_path: data.billNo
+    target_field: bill_no
+  - source_path: data.customerName
+    target_field: customer_name
+    transform: to_upper
+  - source_path: data.totalAmount
+    target_field: total_amount
+    required: true
+  - source_path: data.orderTime
+    target_field: order_time
+    transform: to_iso_date
+  - source_path: data.status
+    target_field: status
+  - source_path: data.remark
+    target_field: remark
+  # List/object fields can be mapped too (kept as-is, validated downstream):
+  - source_path: items
+    target_field: items

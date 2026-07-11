@@ -1,0 +1,76 @@
+{
+  "version": "1.0.0",
+  "description": "FDE 评测集（P0 建立）。用于追踪 RAG 检索质量 (recall@k / MRR)。query 跨多个业务域，smoke 覆盖连接器与门户健康。",
+  "queries": [
+    {"id": "q01", "category": "sales_order", "query": "查询订单号 SO2026060001 的客户名称", "expected_keywords": ["customer_name", "SO2026060001"], "source": "connector://logistics_yonyou"},
+    {"id": "q02", "category": "sales_order", "query": "上个月销售额最高的前 10 个客户", "expected_keywords": ["customer_name", "total_amount"], "source": "connector://logistics_yonyou"},
+    {"id": "q03", "category": "sales_order", "query": "订单 SO2026060001 的总金额是多少", "expected_keywords": ["total_amount", "SO2026060001"], "source": "connector://logistics_yonyou"},
+    {"id": "q04", "category": "sales_order", "query": "状态为已发货的订单有哪些", "expected_keywords": ["status", "已发货"], "source": "connector://logistics_yonyou"},
+    {"id": "q05", "category": "sales_order", "query": "找出备注里包含加急的订单", "expected_keywords": ["remark", "加急"], "source": "connector://logistics_yonyou"},
+    {"id": "q06", "category": "sales_order", "query": "2026年6月华东区的销售订单总数", "expected_keywords": ["order_no", "华东"], "source": "connector://logistics_yonyou"},
+    {"id": "q07", "category": "sales_order", "query": "订单 SO2026060001 的下单时间", "expected_keywords": ["order_time", "SO2026060001"], "source": "connector://logistics_yonyou"},
+    {"id": "q08", "category": "sales_order", "query": "哪些订单金额超过 100 万", "expected_keywords": ["total_amount", "1000000"], "source": "connector://logistics_yonyou"},
+    {"id": "q09", "category": "sales_order", "query": "退货订单的清单", "expected_keywords": ["status", "退货"], "source": "connector://logistics_yonyou"},
+    {"id": "q10", "category": "sales_order", "query": "客户张三对应的所有销售订单", "expected_keywords": ["customer_name", "张三"], "source": "connector://logistics_yonyou"},
+
+    {"id": "q11", "category": "shipment", "query": "运单 SF1234567890 当前到哪了", "expected_keywords": ["tracking_no", "SF1234567890"], "source": "connector://logistics_yonyou"},
+    {"id": "q12", "category": "shipment", "query": "今天发出的物流单有多少", "expected_keywords": ["ship_date", "今天"], "source": "connector://logistics_yonyou"},
+    {"id": "q13", "category": "shipment", "query": "预计明天到达的 shipment 列表", "expected_keywords": ["eta", "明天"], "source": "connector://logistics_yonyou"},
+    {"id": "q14", "category": "shipment", "query": "延迟配送的运单有哪些", "expected_keywords": ["status", "延迟"], "source": "connector://logistics_yonyou"},
+    {"id": "q15", "category": "shipment", "query": "从上海发往北京的在途运单", "expected_keywords": ["from", "上海", "to", "北京"], "source": "connector://logistics_yonyou"},
+    {"id": "q16", "category": "shipment", "query": "物流承运商为顺丰的单据", "expected_keywords": ["carrier", "顺丰"], "source": "connector://logistics_yonyou"},
+    {"id": "q17", "category": "shipment", "query": "运单 SF1234567890 的签收人", "expected_keywords": ["signee", "SF1234567890"], "source": "connector://logistics_yonyou"},
+    {"id": "q18", "category": "shipment", "query": "本周签收率是多少", "expected_keywords": ["signed_rate", "本周"], "source": "connector://logistics_yonyou"},
+
+    {"id": "q19", "category": "hr", "query": "员工工号 E1001 的岗位是什么", "expected_keywords": ["employee_id", "E1001", "position"], "source": "local://hr"},
+    {"id": "q20", "category": "hr", "query": "研发部门有多少人", "expected_keywords": ["department", "研发"], "source": "local://hr"},
+    {"id": "q21", "category": "hr", "query": "张三的直属上级是谁", "expected_keywords": ["employee_name", "张三", "manager"], "source": "local://hr"},
+    {"id": "q22", "category": "hr", "query": "绩效为 C 的员工名单", "expected_keywords": ["performance", "C"], "source": "local://hr"},
+    {"id": "q23", "category": "hr", "query": "哪些员工即将离职", "expected_keywords": ["status", "离职"], "source": "local://hr"},
+    {"id": "q24", "category": "hr", "query": "计算研发部的人均产值", "expected_keywords": ["department", "研发", "output"], "source": "local://hr"},
+    {"id": "q25", "category": "hr", "query": "工龄超过 5 年的员工", "expected_keywords": ["tenure", "5"], "source": "local://hr"},
+    {"id": "q26", "category": "hr", "query": "薪酬高于部门平均的员工", "expected_keywords": ["salary", "平均"], "source": "local://hr"},
+
+    {"id": "q27", "category": "finance", "query": "本月营业收入是多少", "expected_keywords": ["revenue", "本月"], "source": "local://finance"},
+    {"id": "q28", "category": "finance", "query": "第二季度净利润", "expected_keywords": ["net_profit", "Q2"], "source": "local://finance"},
+    {"id": "q29", "category": "finance", "query": "应收账款账龄分析", "expected_keywords": ["receivable", "账龄"], "source": "local://finance"},
+    {"id": "q30", "category": "finance", "query": "毛利率最高的产品线", "expected_keywords": ["gross_margin", "产品线"], "source": "local://finance"},
+    {"id": "q31", "category": "finance", "query": "现金流是否为正", "expected_keywords": ["cash_flow"], "source": "local://finance"},
+    {"id": "q32", "category": "finance", "query": "销售费用同比变化", "expected_keywords": ["expense", "同比"], "source": "local://finance"},
+    {"id": "q33", "category": "finance", "query": "资产负债率是多少", "expected_keywords": ["debt_ratio"], "source": "local://finance"},
+    {"id": "q34", "category": "finance", "query": "本期预算执行率", "expected_keywords": ["budget", "执行率"], "source": "local://finance"},
+
+    {"id": "q35", "category": "analysis", "query": "按地区统计 2026 上半年销售额", "expected_keywords": ["region", "2026", "sales"], "source": "local://db"},
+    {"id": "q36", "category": "analysis", "query": "查询库存表中数量小于 10 的商品", "expected_keywords": ["stock", "quantity", "10"], "source": "local://db"},
+    {"id": "q37", "category": "analysis", "query": "各产品线月环比增长率", "expected_keywords": ["product_line", "环比"], "source": "local://db"},
+    {"id": "q38", "category": "analysis", "query": "最近 30 天新增客户数", "expected_keywords": ["customer", "30天"], "source": "local://db"},
+    {"id": "q39", "category": "analysis", "query": "销售额 top 5 的城市", "expected_keywords": ["sales", "top5", "city"], "source": "local://db"},
+    {"id": "q40", "category": "analysis", "query": "生成月度经营分析 SQL", "expected_keywords": ["SQL", "月度"], "source": "local://db"},
+    {"id": "q41", "category": "analysis", "query": "查询退货率高于 5% 的品类", "expected_keywords": ["return_rate", "5%"], "source": "local://db"},
+    {"id": "q42", "category": "analysis", "query": "对比今年和去年的季度营收", "expected_keywords": ["revenue", "季度", "同比"], "source": "local://db"},
+
+    {"id": "q43", "category": "map_geo", "query": "上海浦东有哪些销售网点", "expected_keywords": ["poi", "上海", "浦东"], "source": "local://map"},
+    {"id": "q44", "category": "map_geo", "query": "北京客户密集区域在哪里", "expected_keywords": ["cluster", "北京"], "source": "local://map"},
+    {"id": "q45", "category": "map_geo", "query": "显示华东仓库分布热力图", "expected_keywords": ["warehouse", "华东", "heatmap"], "source": "local://map"},
+    {"id": "q46", "category": "map_geo", "query": "广州到深圳的物流时效", "expected_keywords": ["route", "广州", "深圳"], "source": "local://map"},
+    {"id": "q47", "category": "map_geo", "query": "标注销售额异常高的城市", "expected_keywords": ["anomaly", "city"], "source": "local://map"},
+    {"id": "q48", "category": "map_geo", "query": "计算两个门店之间的距离", "expected_keywords": ["distance", "门店"], "source": "local://map"},
+
+    {"id": "q49", "category": "rag_general", "query": "FDE 平台支持哪些数据源接入", "expected_keywords": ["数据源", "连接器"], "source": "local://kb"},
+    {"id": "q50", "category": "rag_general", "query": "如何注册一个新的 Java 连接器", "expected_keywords": ["manifest", "注册"], "source": "local://kb"},
+    {"id": "q51", "category": "rag_general", "query": "权限模型是 RBAC 还是 ABAC", "expected_keywords": ["RBAC", "ABAC"], "source": "local://kb"},
+    {"id": "q52", "category": "rag_general", "query": "文档上传支持哪些格式", "expected_keywords": ["pdf", "excel", "docx"], "source": "local://kb"},
+    {"id": "q53", "category": "rag_general", "query": "如何查看决策链审计日志", "expected_keywords": ["decision_chain", "审计"], "source": "local://kb"},
+    {"id": "q54", "category": "rag_general", "query": "系统监控指标在哪里看", "expected_keywords": ["grafana", "监控"], "source": "local://kb"}
+  ],
+  "smoke": {
+    "connector_health": ["logistics_yonyou"],
+    "portal_pages": [
+      "/portal/map",
+      "/portal/data",
+      "/portal/analysis",
+      "/portal/connectors",
+      "/portal/governance"
+    ]
+  }
+}

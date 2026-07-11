@@ -27,6 +27,7 @@ if PROJECT_ROOT not in sys.path:
 # (E402 suppressed: these imports must follow the sys.path bootstrap above.)
 from agents.governance_agent.database import models  # noqa: F401, E402
 from agents.governance_agent.database.session import Base  # noqa: E402
+from agents.ingestion_agent.database import models as ingestion_models  # noqa: F401, E402
 
 config = context.config
 
