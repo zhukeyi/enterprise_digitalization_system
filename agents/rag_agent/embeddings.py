@@ -374,9 +374,30 @@ class ONNXEmbeddingBackend:
             providers=["CPUExecutionProvider"],
         )
 
-        from transformers import AutoTokenizer
+        # Load tokenizer from the lightweight 'tokenizers' library (Rust, no torch)
+        tokenizer_path = Path(self._onnx_path).with_suffix(".tokenizer.json")
+        try:
+            from tokenizers import Tokenizer
 
-        self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            self._tokenizer = Tokenizer.from_file(str(tokenizer_path))
+            # Enable padding + truncation (not automatic in tokenizers lib)
+            pad_id = self._tokenizer.token_to_id("[PAD]") or 0
+            self._tokenizer.enable_padding(
+                pad_id=pad_id,
+                pad_token="[PAD]",
+                length=self._max_seq_length,
+            )
+            self._tokenizer.enable_truncation(max_length=self._max_seq_length)
+            logger.info(
+                "ONNX tokenizer loaded from %s (pure Rust, no torch)",
+                tokenizer_path,
+            )
+        except (ImportError, FileNotFoundError):
+            # Fallback to transformers.AutoTokenizer (brings in torch)
+            from transformers import AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+            logger.warning("tokenizers library not available, falling back to transformers")
         self._loaded = True
 
         # Determine dimension from model output if config is missing
@@ -476,26 +497,39 @@ class ONNXEmbeddingBackend:
         if not texts:
             return []
 
-        tokens = self._tokenizer(
-            list(texts),
-            padding=True,
-            truncation=True,
-            max_length=self._max_seq_length,
-            return_tensors="np",
-        )
+        # tokenizers.Tokenizer (Rust) vs transformers.AutoTokenizer (PyTorch)
+        from tokenizers import Tokenizer as _RustTokenizer
+
+        if isinstance(self._tokenizer, _RustTokenizer):
+            encodings = self._tokenizer.encode_batch(list(texts))
+            input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
+            attention_mask = np.array(
+                [e.attention_mask for e in encodings], dtype=np.int64
+            )
+        else:
+            # transformers.AutoTokenizer (legacy fallback)
+            tokens = self._tokenizer(
+                list(texts),
+                padding=True,
+                truncation=True,
+                max_length=self._max_seq_length,
+                return_tensors="np",
+            )
+            input_ids = _to_numpy(tokens["input_ids"]).astype(np.int64)
+            attention_mask = _to_numpy(tokens["attention_mask"]).astype(np.int64)
 
         outputs = self._session.run(
             None,
             {
-                "input_ids": _to_numpy(tokens["input_ids"]),
-                "attention_mask": _to_numpy(tokens["attention_mask"]),
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
             },
         )
         # first output = last_hidden_state: (batch, seq_len, hidden_dim)
         last_hidden = np.asarray(outputs[0], dtype=np.float32)
 
         # Mean pooling with attention mask
-        mask = np.expand_dims(tokens["attention_mask"], -1).astype(np.float32)
+        mask = np.expand_dims(attention_mask, -1).astype(np.float32)
         summed = (last_hidden * mask).sum(axis=1)
         counts = mask.sum(axis=1).clip(min=1e-9)
         pooled = summed / counts

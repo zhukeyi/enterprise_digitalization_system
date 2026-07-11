@@ -142,6 +142,17 @@ def export_onnx(model_name: str, output_path: str, quantize: bool = True) -> dic
     config_path.write_text(json.dumps(config, indent=2))
     print(f"Config: {config_path}")
 
+    # Also copy tokenizer.json for hyper-lightweight loading (no torch via tokenizers lib)
+    import shutil
+
+    tokenizer_src = Path(st_model.tokenizer.vocab_file).parent / "tokenizer.json"
+    tokenizer_dst = out_path.with_suffix(".tokenizer.json")
+    if tokenizer_src.exists():
+        shutil.copy2(str(tokenizer_src), str(tokenizer_dst))
+        print(f"Tokenizer: {tokenizer_dst} ({_size_mb(tokenizer_dst):.1f} MB)")
+    else:
+        print(f"Warning: tokenizer.json not found at {tokenizer_src}")
+
     return config
 
 
