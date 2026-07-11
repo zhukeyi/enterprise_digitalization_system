@@ -41,12 +41,16 @@ def mock_qdrant_client() -> MagicMock:
     count_result = MagicMock()
     count_result.count = 42
     client.count.return_value = count_result
-    # Mock search
+    # Mock search (legacy API)
     search_result = MagicMock()
     search_result.id = "doc-1"
     search_result.payload = {"text": "hello"}
     search_result.score = 0.95
     client.search.return_value = [search_result]
+    # Mock query_points (modern API, qdrant-client >= 1.12)
+    query_response = MagicMock()
+    query_response.points = [search_result]
+    client.query_points.return_value = query_response
     return client
 
 
@@ -64,6 +68,16 @@ def mock_qdrant_async_client() -> AsyncMock:
     count_result = MagicMock()
     count_result.count = 42
     client.count.return_value = count_result
+    # Mock search (legacy API)
+    search_result = MagicMock()
+    search_result.id = "doc-1"
+    search_result.payload = {"text": "hello"}
+    search_result.score = 0.95
+    client.search.return_value = [search_result]
+    # Mock query_points (modern API, qdrant-client >= 1.12)
+    query_response = MagicMock()
+    query_response.points = [search_result]
+    client.query_points.return_value = query_response
     return client
 
 
@@ -231,7 +245,8 @@ class TestVectorStorePoints:
         assert len(results) == 1
         assert results[0].id == "doc-1"
         assert results[0].score == 0.95
-        mock_qdrant_client.search.assert_called_once()
+        # query_points (modern) or search (legacy) — either is acceptable
+        assert mock_qdrant_client.query_points.called or mock_qdrant_client.search.called
 
     def test_search_with_filter(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
         store._client = mock_qdrant_client
@@ -240,8 +255,11 @@ class TestVectorStorePoints:
             filter_conditions={"source": "pdf", "page__gte": 1},
         )
         assert len(results) == 1
-        mock_qdrant_client.search.assert_called_once()
-        _args, kwargs = mock_qdrant_client.search.call_args
+        # query_points (modern) or search (legacy) — either is acceptable
+        assert mock_qdrant_client.query_points.called or mock_qdrant_client.search.called
+        _args, kwargs = (mock_qdrant_client.query_points.call_args
+                         if mock_qdrant_client.query_points.called
+                         else mock_qdrant_client.search.call_args)
         assert kwargs["query_filter"] is not None
 
     def test_count(self, store: VectorStore, mock_qdrant_client: MagicMock) -> None:
@@ -276,6 +294,10 @@ class TestVectorStoreAsyncPoints:
         search_result.payload = {"text": "hello"}
         search_result.score = 0.95
         mock_qdrant_async_client.search.return_value = [search_result]
+        # Modern API (qdrant-client >= 1.12)
+        query_response = MagicMock()
+        query_response.points = [search_result]
+        mock_qdrant_async_client.query_points.return_value = query_response
 
         store._async_client = mock_qdrant_async_client
         results = await store.async_search(vector=[0.1, 0.2])

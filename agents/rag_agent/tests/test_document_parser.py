@@ -220,7 +220,10 @@ class TestPdfParser:
         mock_doc.__exit__ = MagicMock(return_value=None)
         mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
 
-        with patch("pymupdf.open", return_value=mock_doc):
+        mock_pymupdf = MagicMock()
+        mock_pymupdf.open.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"pymupdf": mock_pymupdf, "fitz": None}):
             parser = PdfParser()
             docs = parser.parse(str(pdf_file))
             assert len(docs) == 1
@@ -232,7 +235,7 @@ class TestPdfParser:
         pdf_file = tmp_path / "test.pdf"
         pdf_file.write_text("fake")
 
-        with patch.dict("sys.modules", {"pymupdf": None}):
+        with patch.dict("sys.modules", {"pymupdf": None, "fitz": None}):
             parser = PdfParser()
             with pytest.raises(ParserError, match="PyMuPDF not installed"):
                 parser.parse(str(pdf_file))

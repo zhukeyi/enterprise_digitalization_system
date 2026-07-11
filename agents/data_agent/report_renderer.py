@@ -155,7 +155,8 @@ class ReportRenderer:
     def _render_template_string(self, template_str: str, variables: dict[str, Any]) -> str:
         """Render a Jinja2 template string with variables.
 
-        Falls back to str.format if Jinja2 is not available.
+        Falls back to a simple Jinja2-style substitution if Jinja2 is not
+        available (handles ``{{ var }}`` and ``{{ var | default('x') }}``).
         """
         if not template_str:
             return ""
@@ -165,12 +166,26 @@ class ReportRenderer:
                 tmpl = self._jinja_env.from_string(template_str)
                 return str(tmpl.render(**variables))
             except Exception as e:
-                logger.warning("Jinja2 render failed: %s; falling back to format", e)
+                logger.warning("Jinja2 render failed: %s; falling back to regex", e)
 
-        try:
-            return template_str.format(**variables)
-        except (KeyError, IndexError, ValueError):
-            return template_str
+        # Fallback: handle {{ var }} and {{ var | default('x') }} syntax
+        import re
+
+        def _replace_var(match: re.Match[str]) -> str:
+            expr = match.group(1).strip()
+            # Handle {{ var | default('fallback') }}
+            if "|" in expr:
+                parts = expr.split("|", 1)
+                var_name = parts[0].strip()
+                default_part = parts[1].strip()
+                # Extract default value from default('...') or default("...")
+                m = re.search(r"default\(['\"](.+?)['\"]\)", default_part)
+                if m:
+                    return str(variables.get(var_name, m.group(1)))
+                return str(variables.get(var_name, ""))
+            return str(variables.get(expr, ""))
+
+        return re.sub(r"\{\{\s*(.+?)\s*\}\}", _replace_var, template_str)
 
     def _render_charts(
         self,

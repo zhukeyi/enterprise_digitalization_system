@@ -233,9 +233,12 @@ def enrich_locations_sync(
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(_run_in_new_loop, locations).result()
     except RuntimeError:
-        # No running loop — use the current loop
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(enrich_locations(locations))
+        # No running loop — create a new one
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(enrich_locations(locations))
+        finally:
+            loop.close()
 
 
 def _run_in_new_loop(locations: list[tuple[float, float]]) -> list[LocationProfile]:
