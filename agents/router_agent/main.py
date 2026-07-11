@@ -113,6 +113,16 @@ try:
 except ImportError:
     logger.warning("MapAI dependencies not available — /map endpoints disabled")
 
+# ── Ingestion Router (P2a / MVS) ──────────────────────────────
+
+try:
+    from agents.ingestion_agent.router import router as ingestion_router
+
+    app.include_router(ingestion_router)
+    logger.info("Ingestion router registered (/ingest/upload, /api/data/ask)")
+except ImportError:
+    logger.warning("Ingestion agent unavailable — /ingest endpoints disabled")
+
 # ── Startup — database initialization ───────────────────────────
 
 

@@ -178,6 +178,8 @@ ignore = [
     "B904",  # raise-without-from-inside-except (intentional in lazy-import blocks)
     "SIM108", # use-ternary-operator (style preference)
     "RUF001", # ambiguous-unicode-character (false positives for CJK text)
+    "RUF002", # ambiguous-unicode-character-docstring (false positives for CJK text)
+    "RUF003", # ambiguous-unicode-character-comment (false positives for CJK text)
     "RUF043", # ambiguous-unicode-regex (false positives for CJK + regex)
     "RUF012", # mutable-class-default (intentional for subclass overridable attrs)
 ]
