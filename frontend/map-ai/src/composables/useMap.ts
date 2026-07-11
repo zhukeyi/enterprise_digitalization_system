@@ -81,40 +81,54 @@ let _bmapPromise: Promise<any> | null = null
 async function loadBMap(): Promise<any> {
   if (_bmapPromise) return _bmapPromise
   const w = window as any
-  if (w.BMapGL) return w
+  if (w.BMapGL && typeof w.BMapGL.Map === 'function') return w
 
   _bmapPromise = new Promise((resolve, reject) => {
     const cbName = '__fdeBMapReady'
-    const prev = (w as any)[cbName]
-    ;(w as any)[cbName] = () => {
-      ;(w as any)[cbName] = prev
-      resolve(w)
+    const prev = w[cbName] as ((...args: any[]) => void) | undefined
+
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    const deadline = Date.now() + 15000
+
+    const stop = () => {
+      if (pollTimer !== null) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
     }
-    const key = getApiKey()
+    const fail = (msg: string) => {
+      stop()
+      w[cbName] = prev
+      _bmapPromise = null
+      reject(new Error(msg))
+    }
+
+    // 百度 GL 的 Map 类经由一个内部异步 chunk 加载；API 的 callback 在主脚本
+    // 加载完成时即触发，但此时 BMapGL.Map 可能尚未挂上。因此轮询等待其成为
+    // 真正的构造函数后再 resolve，避免 `new BMapGL.Map()` 抛 "not a constructor"。
+    const tick = () => {
+      if (w.BMapGL && typeof w.BMapGL.Map === 'function') {
+        stop()
+        w[cbName] = prev
+        resolve(w)
+      } else if (Date.now() > deadline) {
+        fail('BMapGL.Map 未就绪：百度地图 WebGL 模块加载超时，请检查 AK 或网络')
+      }
+    }
+
+    // Baidu 调用此 callback 仅表示主脚本已加载；Map 类可能随后才就绪。
+    w[cbName] = () => {
+      /* no-op：实际就绪由 tick() 轮询判定 */
+    }
+    pollTimer = setInterval(tick, 100)
+
     const s = document.createElement('script')
     s.type = 'text/javascript'
     s.src = `https://api.map.baidu.com/api?type=webgl&v=1.0&ak=${encodeURIComponent(
-      key,
+      getApiKey(),
     )}&callback=${cbName}`
-    s.onerror = () => {
-      _bmapPromise = null
-      reject(new Error('百度地图脚本加载失败（请检查 AK 或网络）'))
-    }
+    s.onerror = () => fail('百度地图脚本加载失败（请检查 AK 或网络）')
     document.head.appendChild(s)
-
-    // 兜底：若 callback 未触发，轮询 BMapGL
-    let attempts = 0
-    const iv = setInterval(() => {
-      if (w.BMapGL) {
-        clearInterval(iv)
-        ;(w as any)[cbName] = prev
-        resolve(w)
-      } else if (++attempts > 60) {
-        clearInterval(iv)
-        _bmapPromise = null
-        reject(new Error('BMapGL 未定义，可能百度地图脚本加载失败'))
-      }
-    }, 200)
   })
   return _bmapPromise
 }
