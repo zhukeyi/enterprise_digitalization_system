@@ -24,7 +24,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agents.ingestion_agent.chunking import build_text_chunks, render_table
+from agents.ingestion_agent.chunking import _estimate_tokens, build_text_chunks, render_table
 from agents.ingestion_agent.database.models import (
     CanonicalDocument as CanonicalDocumentORM,
 )
@@ -191,7 +191,7 @@ class IngestionPipeline:
                     chunk_index=0,
                     content=text,
                     embedding_id=orm.id,
-                    token_count=len(text),
+                    token_count=_estimate_tokens(text),
                 )
             )
 
@@ -433,7 +433,7 @@ class IngestionPipeline:
                         canonical_document_id=orm.id,
                         chunk_index=0,
                         content=child_text,
-                        token_count=len(child_text),
+                        token_count=_estimate_tokens(child_text),
                     )
                     session.add(chunk)
                     await session.flush()
@@ -488,7 +488,7 @@ class IngestionPipeline:
                         canonical_document_id=orm.id,
                         chunk_index=ci,
                         content=spec.child_text,
-                        token_count=len(spec.child_text),
+                        token_count=_estimate_tokens(spec.child_text),
                     )
                     session.add(chunk)
                     await session.flush()

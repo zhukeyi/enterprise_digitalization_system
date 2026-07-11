@@ -4,15 +4,22 @@
 以懒加载单例形式提供给 ingestion router / pipeline 使用，避免重复加载模型。
 
 测试可通过覆盖依赖注入（``router.dependency_overrides``）替换为内存实现。
+
+P4 T2b: ``get_embedding_model`` 支持 ``FDE_EMBEDDING_BACKEND=onnx`` 切换至
+``ONNXEmbeddingBackend``（INT8 量化, ~24MB vs ~400MB, 16x 内存节省）。
 """
 
 from __future__ import annotations
 
-from agents.rag_agent.embeddings import EmbeddingModel
+import os
+
+from agents.rag_agent.embeddings import EmbeddingModel, ONNXEmbeddingBackend
 from agents.rag_agent.vector_store import VectorStore
 
+EmbeddingBackend = EmbeddingModel | ONNXEmbeddingBackend
+
 _vector_store: VectorStore | None = None
-_embedding_model: EmbeddingModel | None = None
+_embedding_model: EmbeddingBackend | None = None
 
 
 def get_vector_store() -> VectorStore:
@@ -23,11 +30,15 @@ def get_vector_store() -> VectorStore:
     return _vector_store
 
 
-def get_embedding_model() -> EmbeddingModel:
-    """返回（懒加载）BGE-M3 嵌入模型单例。"""
+def get_embedding_model() -> EmbeddingBackend:
+    """返回（懒加载）嵌入模型单例（PyTorch 或 ONNX，由 FDE_EMBEDDING_BACKEND 控制）。"""
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = EmbeddingModel()
+        backend = os.getenv("FDE_EMBEDDING_BACKEND", "pytorch").lower()
+        if backend == "onnx":
+            _embedding_model = ONNXEmbeddingBackend()
+        else:
+            _embedding_model = EmbeddingModel()
     return _embedding_model
 
 

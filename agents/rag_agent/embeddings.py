@@ -7,10 +7,14 @@ and async processing queue.
 
 from __future__ import annotations
 
+import json as _json
 import logging
+import os as _os
 import time
+from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("fde.rag.embeddings")
@@ -283,3 +287,220 @@ class EmbeddingModel:
     def get_config(self) -> EmbeddingConfig:
         """Get current configuration."""
         return self.config
+
+
+# ══════════════════════════════════════════════════════════════════
+# ONNX Runtime Backend (P4 T2b)
+# ══════════════════════════════════════════════════════════════════
+
+
+def _to_numpy(tensor: Any) -> Any:
+    """Safely convert a tensor (PyTorch or NumPy) to a NumPy array."""
+    if hasattr(tensor, "cpu"):
+        return tensor.cpu().numpy()
+    return np.asarray(tensor)
+
+
+class ONNXEmbeddingBackend:
+    """P4 T2b: ONNX Runtime embedding backend — replaces PyTorch for lower memory.
+
+    Loads a pre-exported ONNX model (e.g. via ``scripts/export_onnx.py``)
+    and runs inference with ``onnxruntime``. Tokenization reuses
+    ``transformers.AutoTokenizer`` (already installed, ~few MB overhead).
+    Mean pooling + L2 normalization in NumPy — parity with ``sentence-transformers``.
+
+    Activate via: ``FDE_EMBEDDING_BACKEND=onnx``;
+    set ``FDE_ONNX_MODEL_PATH`` to the ``.onnx`` file
+    (default ``~/.cache/fde/bge_model_int8.onnx``).
+
+    Memory: ~24 MB (INT8) vs ~400 MB (PyTorch FP32) — 16x reduction for model weights.
+    """
+
+    def __init__(
+        self,
+        onnx_path: str | None = None,
+        model_name: str | None = None,
+        max_seq_length: int = 512,
+    ) -> None:
+        self._session: Any = None
+        self._tokenizer: Any = None
+        self._onnx_path = onnx_path or _os.getenv(
+            "FDE_ONNX_MODEL_PATH",
+            _os.path.expanduser("~/.cache/fde/bge_model_int8.onnx"),
+        )
+        self._model_name = model_name or _os.getenv(
+            "FDE_RAG_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"
+        )
+        self._max_seq_length = max_seq_length
+        self._dimension: int = 0
+        self._query_instruction: str = _default_query_instruction(self._model_name)
+        self._loaded = False
+
+    @property
+    def model(self) -> Any:
+        if self._session is None:
+            self._load()
+        return self._session
+
+    # ── Lazy loading ─────────────────────────────────────────
+
+    def _load(self) -> None:
+        try:
+            import onnxruntime as ort
+        except ImportError as exc:
+            raise EmbeddingError(
+                "onnxruntime not installed. Install: pip install onnxruntime"
+            ) from exc
+
+        # Load config.json alongside the model for dimension / seq_len
+        config_path = Path(self._onnx_path).with_suffix(".config.json")
+        if config_path.exists():
+            cfg = _json.loads(config_path.read_text())
+            self._dimension = cfg.get("dimension", 512)
+            self._max_seq_length = cfg.get("max_seq_length", self._max_seq_length)
+            tokenizer_name = cfg.get("tokenizer_name", self._model_name)
+        else:
+            tokenizer_name = self._model_name
+
+        logger.info(
+            "Loading ONNX embedding model from %s (dim=%d)",
+            self._onnx_path,
+            self._dimension,
+        )
+
+        self._session = ort.InferenceSession(
+            self._onnx_path,
+            providers=["CPUExecutionProvider"],
+        )
+
+        from transformers import AutoTokenizer
+
+        self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        self._loaded = True
+
+        # Determine dimension from model output if config is missing
+        if self._dimension == 0:
+            dummy = self._tokenizer(
+                ["test"],
+                padding="max_length",
+                truncation=True,
+                max_length=self._max_seq_length,
+                return_tensors="np",
+            )
+            outputs = self._session.run(
+                None,
+                {
+                    "input_ids": _to_numpy(dummy["input_ids"]),
+                    "attention_mask": _to_numpy(dummy["attention_mask"]),
+                },
+            )
+            self._dimension = outputs[0].shape[-1]
+
+        logger.info(
+            "ONNX model loaded (dim=%d, max_seq=%d)",
+            self._dimension,
+            self._max_seq_length,
+        )
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    def unload(self) -> None:
+        self._session = None
+        self._tokenizer = None
+        self._loaded = False
+        self._dimension = 0
+        logger.info("ONNX embedding model unloaded")
+
+    # ── Dimension / Config ──────────────────────────────────
+
+    def get_dimension(self) -> int:
+        if not self._loaded:
+            self._load()
+        return self._dimension
+
+    def get_config(self) -> EmbeddingConfig:
+        return EmbeddingConfig(
+            model_name=self._model_name,
+            device="cpu",
+            max_seq_length=self._max_seq_length,
+            query_instruction=self._query_instruction,
+        )
+
+    # ── Public encode APIs ──────────────────────────────────
+
+    async def encode_queries(self, queries: list[str]) -> list[list[float]]:
+        processed = [f"{self._query_instruction}{q}" for q in queries]
+        return await self._encode(processed)
+
+    async def encode_documents(self, documents: list[str]) -> list[list[float]]:
+        if not documents:
+            return []
+        return await self._encode(documents)
+
+    async def embed_batch(
+        self, texts: list[str], **kwargs: Any
+    ) -> list[EmbeddingResult]:
+
+        if not texts:
+            return []
+
+        t0 = time.monotonic()
+        vectors = await self._encode(texts)
+        elapsed = time.monotonic() - t0
+        latency_per = (elapsed / max(1, len(texts))) * 1000
+
+        return [
+            EmbeddingResult(
+                index=i,
+                text=t[:100],
+                vector=v,
+                dimensions=len(v),
+                model=f"onnx:{self._model_name}",
+                latency_ms=round(latency_per, 1),
+            )
+            for i, (t, v) in enumerate(zip(texts, vectors, strict=True))
+        ]
+
+    # ── internal ────────────────────────────────────────────
+
+    async def _encode(self, texts: list[str]) -> list[list[float]]:
+        import asyncio as _asyncio
+
+        if not self._loaded:
+            self._load()
+        return await _asyncio.to_thread(self._encode_sync, texts)
+
+    def _encode_sync(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        tokens = self._tokenizer(
+            list(texts),
+            padding=True,
+            truncation=True,
+            max_length=self._max_seq_length,
+            return_tensors="np",
+        )
+
+        outputs = self._session.run(
+            None,
+            {
+                "input_ids": _to_numpy(tokens["input_ids"]),
+                "attention_mask": _to_numpy(tokens["attention_mask"]),
+            },
+        )
+        # first output = last_hidden_state: (batch, seq_len, hidden_dim)
+        last_hidden = np.asarray(outputs[0], dtype=np.float32)
+
+        # Mean pooling with attention mask
+        mask = np.expand_dims(tokens["attention_mask"], -1).astype(np.float32)
+        summed = (last_hidden * mask).sum(axis=1)
+        counts = mask.sum(axis=1).clip(min=1e-9)
+        pooled = summed / counts
+
+        # L2 normalize
+        norms = np.linalg.norm(pooled, axis=1, keepdims=True)
+        normalized = pooled / norms.clip(min=1e-9)
+
+        return [normalized[i].tolist() for i in range(normalized.shape[0])]

@@ -1,19 +1,42 @@
-"""父子 chunking（P2b / 完整本地文件入库）。
+"""父子 chunking（P2b / P4 T4 优化）。
 
 * **父块 parent**：表格全文 / 文本段落组（上限 ``max_parent`` 字符）。
 * **子块 child**：表格的每一行 / 文本在父块内的滑窗切片。
+* **Token 感知（P4 T4）**：``child_size`` / ``max_parent`` 默认按中文字符估算
+  （~1.5 字符/令牌），可通过环境变量覆盖以适配不同模型。
 
 子块用于嵌入与向量检索（粒度细、召回准）；命中后通过 ``parent_text`` 回带父块
-上下文（信息完整）。所有依赖经参数注入，测试可用内存实现替换。
+上下文（信息完整）。所有参数可经环境变量配置。
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
 from agents.ingestion_agent.parsers import Block
+
+# ── 环境变量可配参数（P4 T4：支持不同模型 / 嵌入维度的切片策略） ──
+
+# 父块最大字符数（中英文混合，~1.5 字符/令牌 ≈ 800 令牌）
+MAX_PARENT = int(os.getenv("FDE_CHUNK_MAX_PARENT", "1200"))
+# 子块目标字符数（~1.5 字符/令牌 ≈ 150 令牌，适合 BGE-small-zh-512）
+CHILD_SIZE = int(os.getenv("FDE_CHUNK_CHILD_SIZE", "220"))
+# 滑窗重叠字符数（~27 令牌，保证边界上下文连续性）
+OVERLAP = int(os.getenv("FDE_CHUNK_OVERLAP", "40"))
+
+
+def _estimate_tokens(text: str) -> int:
+    """粗略令牌数估算（中文 ~1.5 字符/令牌，ASCII ~3.5 字符/令牌）。
+
+    P4 T4：替代 ``len(text)``，使 token_count 更接近实际嵌入模型的 tokenizer 用量，
+    但不会像完整 tokenizer 调用那样引入额外延迟。
+    """
+    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff" or "\u3400" <= c <= "\u4dbf")
+    ascii_chars = len(text) - cjk
+    return int(cjk / 1.5 + ascii_chars / 3.5) + 1
 
 
 def _content_hash(text: str) -> str:
@@ -80,11 +103,11 @@ def build_text_chunks(
     source_ref: str,
     raw_id: str,
     loc: dict[str, Any] | None = None,
-    max_parent: int = 1200,
-    child_size: int = 220,
-    overlap: int = 40,
+    max_parent: int = MAX_PARENT,
+    child_size: int = CHILD_SIZE,
+    overlap: int = OVERLAP,
 ) -> list[ChunkSpec]:
-    """文本 → 父块(段落组) + 父块内滑窗子块。
+    """文本 → 父块(段落组) + 父块内滑窗子块（P4 T4：参数可环境变量配置）。
 
     父块按段落边界切分（不超过 ``max_parent``）；父块内再按 ``child_size`` 字符滑窗
     （步长 ``child_size - overlap``）生成子块。``parent_text`` 始终携带完整父块。
