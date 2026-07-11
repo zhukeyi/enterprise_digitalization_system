@@ -35,7 +35,6 @@ def get_embedding_model() -> EmbeddingBackend:
     global _embedding_model
     if _embedding_model is None:
         backend = os.getenv("FDE_EMBEDDING_BACKEND", "pytorch").lower()
-        print(f"[STORE] backend selection: {backend}", flush=True)
         if backend == "onnx":
             _embedding_model = ONNXEmbeddingBackend()
         else:
