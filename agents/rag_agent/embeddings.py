@@ -367,6 +367,7 @@ class ONNXEmbeddingBackend:
             self._onnx_path,
             self._dimension,
         )
+        print(f"[ONNX] Loading model: {self._onnx_path} dim={self._dimension}", flush=True)
 
         self._session = ort.InferenceSession(
             self._onnx_path,
