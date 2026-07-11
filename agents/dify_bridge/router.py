@@ -110,6 +110,21 @@ def create_dify_router(
             "dify_url": bridge.config.dify_api_url,
         }
 
+    # ── OpenAPI spec serving (P7: for Dify Custom Tool import) ─────
+    @router.get("/openapi.yaml")
+    async def openapi_spec() -> Any:
+        """Serve the FDE OpenAPI 3.0 spec for Dify custom tool import.
+
+        In Dify: 工具 → 创建自定义工具 → OpenAPI → 输入此 URL:
+        https://host:8443/fde-api/dify/openapi.yaml
+        """
+        import yaml
+        from pathlib import Path
+
+        spec_path = Path(__file__).parent.parent.parent / "docs" / "fde-dify-openapi.yaml"
+        with open(spec_path) as f:
+            return yaml.safe_load(f)
+
     logger.info(
         "Dify bridge router created with %d tools at /dify/*",
         len(bridge.export_tool_specs()),

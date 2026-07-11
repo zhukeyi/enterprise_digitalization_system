@@ -1,0 +1,254 @@
+openapi: "3.0.3"
+info:
+  title: FDE AI Platform — Data Ingestion & RAG API
+  description: |
+    FDE AI Platform 的数据接入与智能检索 API，可在 Dify 中作为 Custom Tool 导入。
+
+    **可用工具（导入后 Dify 自动生成工具节点）：**
+    1. `upload_file` — 上传文件自动解析入库（支持 xlsx/csv/pdf/docx/pptx）
+    2. `ask_data` — 自然语言检索已入库数据（RAG 问答）
+    3. `get_task_status` — 查询异步入库任务状态
+
+    **接入外部系统数据（连接器）：** 除文件上传外，FDE 还支持通过连接器接入
+    数据库、API、消息系统等外部数据源。详情见 FDE 连接器管理页。
+  version: "4.0.0"
+  contact:
+    name: FDE AI Platform
+servers:
+  - url: https://217.142.246.70:8443/fde-api
+    description: FDE Production Server
+
+paths:
+  /ingest/upload:
+    post:
+      operationId: upload_file
+      summary: 上传文件并自动解析入库
+      description: |
+        上传 Excel/CSV/PDF/DOCX/PPTX 文件，FDE 自动完成：
+        - 格式解析（表格/段落/文本框）
+        - 三层字段归一化（identity/alias/transform）
+        - 父子分块（滑动窗口，保持上下文）
+        - 向量嵌入并写入 Qdrant（支持语义检索）
+        - FTS5 全文索引（支持关键词匹配）
+        - SHA256 幂等去重（重复文件自动跳过）
+
+        **支持格式**: .xlsx .xlsm .csv .pdf .docx .pptx
+        **大小上限**: 20MB
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 要上传的文件
+                doc_type:
+                  type: string
+                  description: 数据集标识（用于后续检索过滤），默认 "file_upload"
+                  default: "file_upload"
+      responses:
+        "200":
+          description: 入库成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResult"
+        "400":
+          description: 不支持的文件类型
+        "413":
+          description: 文件超过 20MB 上限
+        "422":
+          description: 解析/归一化失败
+      x-dify:
+        enabled: true
+        name: 文件入库
+        description: 上传文件自动解析入库并向量化，支持 xlsx/csv/pdf/docx/pptx
+
+  /api/data/ask:
+    post:
+      operationId: ask_data
+      summary: 自然语言检索已入库数据（RAG 问答）
+      description: |
+        用自然语言查询已入库的数据。FDE 自动完成：
+        - 查询改写（实体归一 + 同义词扩展 + 停用词移除）
+        - 向量检索（从 Qdrant 召回 top-k）
+        - FTS5 词法召回合并
+        - 词汇 F1 融合重排
+        - LLM 合成答案（带来源引用）
+
+        **典型用法**（Dify 工作流中）:
+        1. 先用 `upload_file` 上传一批企业数据
+        2. 再用 `ask_data` 提问 "杭州有哪些科技公司"
+        3. 答案会包含具体公司名称和来源数据
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: 自然语言查询，如 "杭州的机器人公司" 或 "2024年营收最高的三家"
+                top_k:
+                  type: integer
+                  description: 返回结果数，默认 5，最大 20
+                  default: 5
+                  minimum: 1
+                  maximum: 20
+                doc_type:
+                  type: string
+                  description: 限定检索的数据集标识（与 upload_file 时填的 doc_type 对应），不填则搜全部
+      responses:
+        "200":
+          description: 检索成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskResult"
+        "400":
+          description: 查询参数无效
+      x-dify:
+        enabled: true
+        name: 数据问答
+        description: 用自然语言查询已入库的企业数据，返回 AI 合成的答案和来源
+
+  /ingest/tasks/{task_id}:
+    get:
+      operationId: get_task_status
+      summary: 查询异步入库任务状态
+      description: |
+        查询通过 `/ingest/upload/async` 提交的异步入库任务的状态。
+        状态流转: pending → processing → completed | failed
+
+        可用于 Dify 工作流中配合异步上传使用。
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 异步任务 ID
+      responses:
+        "200":
+          description: 任务状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStatus"
+        "404":
+          description: 任务不存在
+      x-dify:
+        enabled: true
+        name: 任务状态
+        description: 查询异步入库任务的进度和结果
+
+  /health:
+    get:
+      operationId: health_check
+      summary: 健康检查
+      responses:
+        "200":
+          description: 服务正常
+
+components:
+  schemas:
+    IngestResult:
+      type: object
+      properties:
+        doc_type:
+          type: string
+          description: 数据集标识
+        filename:
+          type: string
+          description: 原始文件名
+        source_ref:
+          type: string
+          description: 数据来源引用
+        blocks:
+          type: integer
+          description: 解析出的文本段落数
+        canonical:
+          type: integer
+          description: 归一化后的标准实体数（入库的"行"数）
+        chunks:
+          type: integer
+          description: 生成的检索切片数
+        indexed_vectors:
+          type: integer
+          description: 成功写入 Qdrant 的向量数
+        raw_id:
+          type: string
+          description: 原始文档 ID
+        storage_ref:
+          type: string
+          description: 对象存储引用
+        duplicated:
+          type: boolean
+          description: 是否重复文件（幂等去重）
+
+    AskResult:
+      type: object
+      properties:
+        query:
+          type: string
+          description: 原始查询
+        answer:
+          type: string
+          description: AI 合成的答案，包含具体数据和来源
+        count:
+          type: integer
+          description: 检索到的相关结果数
+        sources:
+          type: array
+          description: 来源数据列表
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              text:
+                type: string
+              canonical:
+                type: object
+              source:
+                type: string
+        cached:
+          type: boolean
+          description: 是否命中缓存
+
+    TaskStatus:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          description: 任务当前状态
+        filename:
+          type: string
+        doc_type:
+          type: string
+        progress_pct:
+          type: integer
+          description: 进度百分比 0-100
+        canonical_count:
+          type: integer
+        total_chunks:
+          type: integer
+        indexed_chunks:
+          type: integer
+        error_message:
+          type: string
+          description: 失败时的错误信息
+        created_at:
+          type: string
+          format: date-time
