@@ -5,8 +5,11 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>map-ai</title>
-    <!-- 地图 SDK 改为运行时按需异步加载（见 src/composables/useMap.ts），
-         支持嵌入场景通过 URL 参数 / mount 配置动态指定 AK，无需写死。 -->
+    <!--
+      百度地图 SDK 由 useMap.ts 通过官方 callback 机制异步加载
+      （api?...&callback=__fdeBMapReady）。不在此处同步注入：百度 loader 内部
+      的 document.write 在文档关闭后调用会清空页面，反而导致地图加载失败。
+    -->
   </head>
   <body>
     <div id="app"></div>
