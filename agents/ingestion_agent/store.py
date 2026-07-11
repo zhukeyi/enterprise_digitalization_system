@@ -36,8 +36,12 @@ def get_embedding_model() -> EmbeddingBackend:
     if _embedding_model is None:
         backend = os.getenv("FDE_EMBEDDING_BACKEND", "pytorch").lower()
         if backend == "onnx":
+            import logging
+            logging.getLogger("router").info("Backend selection: ONNX (FDE_EMBEDDING_BACKEND=onnx)")
             _embedding_model = ONNXEmbeddingBackend()
         else:
+            import logging
+            logging.getLogger("router").info("Backend selection: PyTorch (FDE_EMBEDDING_BACKEND=%s)", backend)
             _embedding_model = EmbeddingModel()
     return _embedding_model
 
