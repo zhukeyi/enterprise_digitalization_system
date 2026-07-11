@@ -4,7 +4,8 @@
 
 .PHONY: help install dev dev-down test lint format typecheck \
         clean docker-up docker-down docker-logs pre-commit \
-        cov cov-html cov-fail verify deploy-test docs
+        cov cov-html cov-fail verify deploy-test docs \
+        db-upgrade db-downgrade db-revision db-check db-stamp
 
 .DEFAULT_GOAL := help
 
@@ -16,6 +17,7 @@ RUFF     := $(VENV)/bin/ruff
 BLACK    := $(VENV)/bin/black
 MYPY     := $(VENV)/bin/mypy
 PRE_COMMIT := $(VENV)/bin/pre-commit
+ALEMBIC  := $(VENV)/bin/alembic
 
 # ═══════════════════════════════════════════════════════════════════
 # Help
@@ -144,3 +146,22 @@ clean-all: clean  ## Clean everything including venv
 docs:  ## Serve API docs locally
 	@echo "📖 API docs will be available at http://localhost:8000/docs"
 	@echo "Run: make dev and then start the gateway service"
+
+# ═══════════════════════════════════════════════════════════════════
+# Database Migrations (Alembic)
+# ═══════════════════════════════════════════════════════════════════
+
+db-upgrade:  ## Apply all pending Alembic migrations (reads DATABASE_URL)
+	$(ALEMBIC) upgrade head
+
+db-downgrade:  ## Downgrade one Alembic revision
+	$(ALEMBIC) downgrade -1
+
+db-revision:  ## Autogenerate a new migration from ORM models (msg="...")
+	$(ALEMBIC) revision --autogenerate -m "$(msg)"
+
+db-check:  ## Verify ORM models match the database (no changes applied)
+	$(ALEMBIC) check
+
+db-stamp:  ## Mark current DB as up-to-date without running SQL (baseline=head)
+	$(ALEMBIC) stamp head
