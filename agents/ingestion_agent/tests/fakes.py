@@ -88,3 +88,25 @@ class InMemoryVectorStore:
 
     async def async_count(self, collection=None) -> int:
         return len(self.points)
+
+
+# ── P6a / storage fakes ──────────────────────────────────────
+
+
+class FakeStorage:
+    """In-memory object storage for tests."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, bytes] = {}
+
+    async def put(self, key: str, data: bytes) -> str:
+        self._store[key] = data
+        return f"fake://{key}"
+
+    async def get(self, key: str) -> bytes | None:
+        flat = key.replace("fake://", "")
+        return self._store.get(flat)
+
+    async def exists(self, key: str) -> bool:
+        flat = key.replace("fake://", "")
+        return flat in self._store

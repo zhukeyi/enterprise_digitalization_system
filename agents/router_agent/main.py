@@ -128,24 +128,56 @@ except ImportError:
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """Initialize database tables on first start."""
+    """Initialize database, migrations, and P6a worker on first start."""
     try:
-        from agents.governance_agent.database.session import get_engine, init_database
+        from agents.governance_agent.database.session import (
+            get_engine,
+            init_database,
+        )
 
         await init_database()
         logger.info("Database tables initialized")
-        # P3b 迁移：补齐 raw_documents 新列 + 创建 canonical_fts（幂等，旧库升级安全）
+        # P3b/P6a 迁移：补齐新列 + FTS + ingest_tasks（幂等）
         try:
             from agents.ingestion_agent.migration import migrate_schema
 
             await migrate_schema(get_engine())
-            logger.info("P3b schema migration applied")
+            logger.info("P3b/P6a schema migration applied")
         except Exception as e:
-            logger.warning("P3b migration skipped/failed (non-fatal): %s", e)
+            logger.warning("Migration skipped/failed (non-fatal): %s", e)
+
+        # P6a: start async ingestion worker
+        try:
+            from agents.governance_agent.database.session import _get_session_factory
+            from agents.ingestion_agent.storage import get_storage
+            from agents.ingestion_agent.store import get_embedding_model, get_vector_store
+            from agents.ingestion_agent.tasks import start_worker
+
+            _ = await start_worker(
+                session_factory=_get_session_factory(),
+                vector_store=get_vector_store(),
+                embedding_model=get_embedding_model(),
+                object_storage=get_storage(),
+            )
+            logger.info("P6a IngestWorker started")
+        except Exception as e:
+            logger.warning("P6a worker start failed (non-fatal): %s", e)
     except ImportError:
         logger.debug("Database not configured, skipping init")
     except Exception as e:
         logger.warning("Database init failed (may be expected in dev): %s", e)
+
+
+@app.on_event("shutdown")
+async def shutdown_event() -> None:
+    """Gracefully stop the P6a worker."""
+    try:
+        from agents.ingestion_agent.tasks import stop_worker
+
+        await stop_worker()
+        logger.info("P6a IngestWorker stopped")
+    except ImportError:
+        pass
 
 
 # ── Services (eagerly initialized for testability) ───────────────────
