@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FDE AI Platform — 系统架构图</title>
+<style>
+  :root {
+    --c-edge: #6c5ce7;
+    --c-fe: #0984e3;
+    --c-be: #00b894;
+    --c-orch: #e17055;
+    --c-worker: #fdcb6e;
+    --c-data: #636e72;
+    --c-gov: #d63031;
+    --bg: #f7f9fc;
+    --card: #ffffff;
+    --ink: #2d3436;
+    --muted: #636e72;
+    --line: #dfe6e9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: 'Inter', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.6;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin-bottom: 28px; font-size: 14px; }
+  .diagram {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 24px; margin-bottom: 32px; box-shadow: 0 4px 20px rgba(0,0,0,.04);
+  }
+  .layer { margin-bottom: 14px; }
+  .layer-label {
+    font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .box {
+    border-radius: 10px; padding: 10px 14px; color: #fff; font-size: 13px; font-weight: 600;
+    flex: 1 1 auto; min-width: 90px; text-align: center;
+  }
+  .box small { display: block; font-weight: 400; font-size: 11px; opacity: .9; margin-top: 2px; }
+  .edge { background: var(--c-edge); }
+  .fe { background: var(--c-fe); }
+  .be { background: var(--c-be); }
+  .orch { background: var(--c-orch); }
+  .w { background: var(--c-worker); color: #2d3436; }
+  .data { background: var(--c-data); }
+  .gov { background: var(--c-gov); }
+  .conn { text-align: center; color: var(--muted); font-size: 18px; margin: 2px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 880px){ .grid2 { grid-template-columns: 1fr; } }
+  .module {
+    background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--c-be);
+    border-radius: 10px; padding: 14px 16px; box-shadow: 0 2px 10px rgba(0,0,0,.03);
+  }
+  .module h3 { margin: 0 0 4px; font-size: 15px; }
+  .module .tag { font-size: 11px; color: #fff; background: var(--c-be); padding: 1px 8px; border-radius: 20px; margin-left: 6px; vertical-align: middle; }
+  .module p { margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+  .module .coop { font-size: 12px; color: var(--ink); margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .flow {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px;
+    margin-top: 16px; font-family: 'SF Mono', Menlo, monospace; font-size: 12.5px; color: var(--ink);
+    white-space: pre-wrap; line-height: 1.9;
+  }
+  .section-title { font-size: 18px; margin: 36px 0 14px; padding-bottom: 6px; border-bottom: 2px solid var(--c-be); }
+  .principle { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 12px; margin-top: 12px; }
+  .principle .p { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+  .principle .p b { color: var(--c-orch); }
+  code { background: #eef2f7; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>FDE 企业级 AI 平台 — 系统架构图</h1>
+  <div class="sub">基于 README（v2.0）与 architecture.md · 15 个 Agent 模块 · LangGraph Supervisor-Worker 编排 · 私有化部署</div>
+
+  <div class="diagram">
+    <div class="layer">
+      <div class="layer-label">① 接入 / 边缘层（Access & Edge）</div>
+      <div class="row">
+        <div class="box edge">Nginx (TLS)<small>8443 / 80·443 · certbot 自动续期</small></div>
+        <div class="box edge">Dify 容器<small>工作流编排（docker-nginx）</small></div>
+      </div>
+    </div>
+    <div class="conn">↓</div>
+
+    <div class="layer">
+      <div class="layer-label">② 前端应用层（Frontend · Vue3）</div>
+      <div class="row">
+        <div class="box fe">MapAI 看板<small>地图 + 标注 + 分析收纳盒 + 语音</small></div>
+        <div class="box fe">即插即用模块<small>MapAIModule · iframe/UMD 嵌入</small></div>
+        <div class="box fe">桌面客户端<small>Tauri SDK（全局快捷键/文本捕获）</small></div>
+      </div>
+    </div>
+    <div class="conn">↓ HTTP / WebSocket</div>
+
+    <div class="layer">
+      <div class="layer-label">③ 后端 API 层（FastAPI · :8000）</div>
+      <div class="row">
+        <div class="box be">智能路由网关<small>多模型路由 + 防呆中间件</small></div>
+        <div class="box be">统一认证中间件<small>JWT + API Key · RBAC/ABAC</small></div>
+        <div class="box be">Dify Tool Bridge<small>工具节点桥接</small></div>
+      </div>
+    </div>
+    <div class="conn">↓</div>
+
+    <div class="layer">
+      <div class="layer-label">④ 编排层（LangGraph Supervisor-Worker）</div>
+      <div class="row">
+        <div class="box orch">Supervisor<small>只规划：意图解析 → 结构化指令(JSON)</small></div>
+        <div class="box orch">冲突裁决 / 响应生成<small>ConflictResolver · ResponseGenerator</small></div>
+        <div class="box orch">ToolRegistry<small>异步分发 · 消息总线</small></div>
+      </div>
+    </div>
+    <div class="conn">↓ 结构化指令路由（后端代码执行，LLM 不直接调 API）</div>
+
+    <div class="layer">
+      <div class="layer-label">⑤ Worker 智能体层（10+ 确定性执行者）</div>
+      <div class="row">
+        <div class="box w">RAG<small>Qdrant+BM25+BGE</small></div>
+        <div class="box w">HR<small>画像/人岗/风险</small></div>
+        <div class="box w">Data<small>多源采集</small></div>
+        <div class="box w">Analysis<small>NL2SQL</small></div>
+        <div class="box w">Map<small>空间分析</small></div>
+        <div class="box w">IM<small>企微/飞书/钉钉</small></div>
+        <div class="box w">Router<small>模型网关</small></div>
+        <div class="box w">Governance<small>认证/审计</small></div>
+        <div class="box w">Compliance<small>合规</small></div>
+        <div class="box w">BizSystem<small>业务系统</small></div>
+      </div>
+    </div>
+    <div class="conn">↓</div>
+
+    <div class="layer">
+      <div class="layer-label">⑥ 数据 / 存储 / 基础设施层</div>
+      <div class="row">
+        <div class="box data">Postgres<small>系统记录 + JSONB</small></div>
+        <div class="box data">Qdrant<small>向量检索</small></div>
+        <div class="box data">MinIO<small>二进制/文档</small></div>
+        <div class="box data">Redis<small>缓存/队列</small></div>
+        <div class="box data">OpenSearch<small>BM25 规模化(可选)</small></div>
+        <div class="box data">Prometheus/Grafana/Loki<small>可观测</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">各模块用途（结合 README）</div>
+  <div class="grid2">
+    <div class="module"><h3>A · 智能路由网关 <span class="tag">Router</span></h3><p>多模型路由、租户管理、灰度发布、成本统计。把用户请求导向最合适的 LLM 适配器。</p><div class="coop">配合：④ Supervisor 拿到规划后，由 Router 选择并调用底层模型；所有模型调用经防呆中间件。</div></div>
+    <div class="module"><h3>B · 企业 RAG 引擎 <span class="tag">rag_agent</span></h3><p>多模态文档解析、混合检索（向量+BM25+RRF）、零幻觉抽取式摘要（rag_answer）。</p><div class="coop">配合：⑤ RAG Worker 注册为工具 → ④ ToolRegistry 分发；检索后 ② 认证中间件做权限硬过滤再交给 LLM。</div></div>
+    <div class="module"><h3>C · Dify 应用编排 <span class="tag">dify_bridge</span></h3><p>可视化工作流编排、多模型网关、外部知识库集成；FastAPI 侧提供 /dify/* 工具节点桥。</p><div class="coop">配合：① Nginx 反代 Dify；③ 后端通过 Bridge 把 FDE 工具暴露给 Dify 工作流。</div></div>
+    <div class="module"><h3>D · 统一消息枢纽 <span class="tag">im_agent</span></h3><p>企微/飞书/钉钉多 IM 平台接入、会话管理、消息路由（Pydantic 模型 + 适配器 Stub）。</p><div class="coop">配合：⑤ IM Worker；把外部对话事件喂给 ④ Supervisor，再把响应推回 IM。</div></div>
+    <div class="module"><h3>E · 桌面 AI 助手 <span class="tag">client_agent</span></h3><p>Tauri 桌面客户端 SDK：全局快捷键、文本捕获、AI 回填。</p><div class="coop">配合：② 前端 SDK；通过 ③ API 调用后端 Agent。</div></div>
+    <div class="module"><h3>F · 数据情报服务 <span class="tag">data_agent</span></h3><p>全球/多源数据采集、ETL 清洗、归一化（含字段映射与 CanonicalDocument）。</p><div class="coop">配合：⑥ 入库 Postgres/Qdrant；为 ⑤ Analysis/RAG 提供结构化 + 向量数据。</div></div>
+    <div class="module"><h3>G · 智能分析层 <span class="tag">analysis_agent</span></h3><p>NL2SQL 自然语言转查询、交互式 Dashboard、下钻关联分析（scipy/pandas）。</p><div class="coop">配合：⑤ Analysis Worker；SQL 经安全校验后查 ⑥ Postgres；结果回 ② 图表。</div></div>
+    <div class="module"><h3>H · 治理与可观测 <span class="tag">governance_agent</span></h3><p>统一认证/权限(RBAC+ABAC)、审计、评测(Eval)、全链路追踪。</p><div class="coop">配合：③ AuthMiddleware 硬过滤；所有请求留 决策链日志；④ 追踪 trace_id 贯穿全链路。</div></div>
+    <div class="module"><h3>J · 人力资源智能决策 <span class="tag">hr_agent</span></h3><p>员工画像、人岗匹配、风险评估、裁员评估；5 步防呆校验。</p><div class="coop">配合：⑤ HR Worker；调用 ⑥ 数据；敏感操作走 ② 防呆 + ③ 权限校验。</div></div>
+    <div class="module"><h3>K · LangGraph 编排层 <span class="tag">orchestrator</span></h3><p>Supervisor-Worker 状态机：规划 → 路由 → 执行 → 冲突裁决 → 响应生成。</p><div class="coop">配合：中枢。接收 ③ 请求，调度 ⑤ 各 Worker，经 ToolRegistry 分发，结果聚合回 ②。</div></div>
+    <div class="module"><h3>L · 地图 AI 分析 <span class="tag">map_agent</span></h3><p>实体标记、分析收纳盒、语音输入、相关性分析、可视化（ECharts 热力/散点）+ 地图联动。</p><div class="coop">配合：② MapAI 前端发起；调 ⑤ Map Worker → 后端 /map/analysis 流水线（取实体→相关性→AI 解读）。</div></div>
+    <div class="module"><h3>连接器 Agent <span class="tag">connector_agent</span></h3><p>（规划中）对接外部业务系统（用友/金蝶/WMS/TMS 等 Java 连接器），统一 /manifest 契约 + 适配器入库。</p><div class="coop">配合：消费 Java 连接器 REST；归一为 CanonicalDocument → ⑥ 入库 → ⑤ RAG/Analysis 复用。</div></div>
+    <div class="module"><h3>共享层 <span class="tag">shared/</span></h3><p>SDK（trace/decorators/otel）、Models、Prompts、Utils（config/ids/hashing/retry/validators）。</p><div class="coop">配合：被所有 ③⑤ 模块复用；TraceContext 线程安全、OTel 可插拔后端。</div></div>
+    <div class="module"><h3>前端即插即用 <span class="tag">MapAIModule</span></h3><p>prop 驱动 + 事件发射 + UMD/iframe 双集成；数据解耦(static/remote/backend)。</p><div class="coop">配合：① 第三方看板通过 iframe/UMD 嵌入；运行时指定地图 provider/AK。</div></div>
+  </div>
+
+  <div class="section-title">模块间配合 / 数据流</div>
+  <div class="flow">用户请求
+  │
+  ▼
+① Nginx (TLS) ──► ② 前端 MapAI / 桌面客户端 / IM
+  │
+  ▼
+③ FastAPI ── AuthMiddleware(JWT/API Key, RBAC/ABAC 硬过滤)
+  │
+  ▼
+④ Supervisor(LangGraph)：理解意图 → 拆解子任务 → 输出结构化 PlanStep(JSON)
+  │  结构化指令路由（后端代码解析，LLM 不直接调 API）
+  ├──────────────┬──────────────┬──────────────┐
+  ▼              ▼              ▼              ▼
+⑤ RAG Worker   ⑤ Analysis W.  ⑤ Map Worker   ⑤ HR/Data/IM…
+  │              │              │
+  ├─ BGE 嵌入 ─► ⑥ Qdrant       │              │
+  ├─ BM25 索引 ─► ⑥ (或 OpenSearch)            │
+  ├─ NL2SQL ───► ⑥ Postgres     │              │
+  ├─ 实体拉取 ─► ⑥ Postgres/Qdrant            │
+  │              │              │
+  ▼              ▼              ▼
+④ ConflictResolver（冲突检测+裁决规则）→ ResponseGenerator
+  │
+  ▼
+③ 响应 → ② 前端渲染（地图联动 / ECharts / AI 解读）+ WebSocket 推送
+  │
+  ▼
+⑥ 全程写入 Postgres（决策链日志）+ Prometheus/Grafana/Loki 可观测</div>
+
+  <div class="section-title">核心设计原则（README §1.2）</div>
+  <div class="principle">
+    <div class="p"><b>模块化</b>：各模块松耦合，可独立安装/升级/替换。</div>
+    <div class="p"><b>本地优先</b>：PII/私域数据组件必须本地部署。</div>
+    <div class="p"><b>LLM 只规划</b>：Main Agent 输出结构化指令，工具调用由后端执行。</div>
+    <div class="p"><b>权限硬过滤</b>：权限在后端实现，不经过 LLM，杜绝提示词注入。</div>
+    <div class="p"><b>零幻觉</b>：合规场景强制溯源引用，相似度低于阈值直接拒答。</div>
+    <div class="p"><b>防呆设计</b>：所有操作含确认/校验/回退（HR 5 步、SQL 安全校验、地图空实体校验）。</div>
+  </div>
+
+  <div class="section-title">部署拓扑（当前生产）</div>
+  <div class="flow">Oracle ARM (217.142.246.70)
+├─ 宿主机 systemd nginx :8443  →  /fde/  (MapAI 静态前端)
+│                         →  /fde-api/  → proxy_pass :8000 (FastAPI, 去前缀)
+│                         →  /          → Dify (172.18.0.12)
+├─ fde-backend.service (FastAPI :8000, venv)
+├─ Qdrant (Docker, 向量)   Postgres (系统记录)   MinIO/Redis (规划中)
+└─ Docker Compose: Dify 12 容器 (docker-nginx-1 仅服务 Dify)</div>
+</body>
+</html>
