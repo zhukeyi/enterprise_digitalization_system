@@ -123,6 +123,25 @@ try:
 except ImportError:
     logger.warning("Ingestion agent unavailable — /ingest endpoints disabled")
 
+# ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
+
+
+@app.get("/dify/openapi.yaml")
+async def dify_openapi_spec():
+    """Serve the FDE OpenAPI 3.0 spec for Dify custom tool import.
+
+    In Dify: 工具 → 创建自定义工具 → OpenAPI → 输入 URL:
+    https://host:8443/fde-api/dify/openapi.yaml
+    """
+    import yaml
+    from pathlib import Path
+
+    spec_path = Path(__file__).resolve().parent.parent.parent / "docs" / "fde-dify-openapi.yaml"
+    from fastapi.responses import PlainTextResponse
+
+    return PlainTextResponse(spec_path.read_text(encoding="utf-8"), media_type="text/yaml")
+
+
 # ── Startup — database initialization ───────────────────────────
 
 
