@@ -79,7 +79,7 @@ sudo systemctl is-active fde-backend   # 应返回 active
 ```
 
 > ⚠️ 依赖清单：`pdfplumber`（P2b 新增，最易遗漏）、`python-docx`、`python-pptx`、`openpyxl`（P2a 已装）。
-> 嵌入模型为服务端 env `FDE_RAG_EMBEDING_MODEL`（实际 `BAAI/bge-small-zh-v1.5`），首次请求懒加载约 20–40s。
+> 嵌入模型为服务端 env `FDE_RAG_EMBEDDING_MODEL`（实际 `BAAI/bge-small-zh-v1.5`），首次请求懒加载约 20–40s。
 
 ## 6. 验收结果（生产环境，2026-07-11）
 

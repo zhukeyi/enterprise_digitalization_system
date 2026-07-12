@@ -254,40 +254,39 @@ services:
     networks:
       - fde-network
 
-  # ── Optional: Prometheus ───────────────────────────────────────
-  # Uncomment to enable. See deploy/prometheus/ for config.
-  # prometheus:
-  #   image: prom/prometheus:v3.0.0
-  #   container_name: fde-prometheus
-  #   expose:
-  #     - "9090"
-  #   volumes:
-  #     - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #     - prometheus_data:/prometheus
-  #   command:
-  #     - "--config.file=/etc/prometheus/prometheus.yml"
-  #     - "--storage.tsdb.retention.time=7d"
-  #     - "--storage.tsdb.path=/prometheus"
-  #   restart: unless-stopped
-  #   networks:
-  #     - fde-network
+  # ── Prometheus (Phase 0: uncommented for observability) ────────
+  prometheus:
+    image: prom/prometheus:v3.0.0
+    container_name: fde-prometheus
+    expose:
+      - "9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.path=/prometheus"
+    restart: unless-stopped
+    networks:
+      - fde-network
 
-  # ── Optional: Grafana ──────────────────────────────────────────
-  # Uncomment to enable. See deploy/grafana/ for config.
-  # grafana:
-  #   image: grafana/grafana:11.3.0
-  #   container_name: fde-grafana
-  #   expose:
-  #     - "3000"
-  #   volumes:
-  #     - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-  #     - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
-  #     - grafana_data:/var/lib/grafana
-  #   environment:
-  #     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-  #   restart: unless-stopped
-  #   networks:
-  #     - fde-network
+  # ── Grafana (Phase 0: uncommented for observability) ──────────
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: fde-grafana
+    expose:
+      - "3000"
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    restart: unless-stopped
+    networks:
+      - fde-network
 
 # ══════════════════════════════════════════════════════════════════
 # Volumes
@@ -302,8 +301,8 @@ volumes:
   certbot_www:
   certbot_conf:
   frontend_dist:
-  # prometheus_data:
-  # grafana_data:
+  prometheus_data:
+  grafana_data:
 
 # ══════════════════════════════════════════════════════════════════
 # Network

@@ -92,13 +92,20 @@ class MockAdapter(BaseAdapter):
         else:
             content = _MOCK_RESPONSES["default"].format(query=last_msg)
 
+        # Estimate tokens: ~1 token per 4 chars (English) / 1 token per CJK char
+        all_text = " ".join(m.content for m in request.messages)
+        prompt_tokens = _estimate_tokens(all_text)
+        completion_tokens = _estimate_tokens(content)
+
         return ChatCompletionResponse(
             id=f"mock-{uuid.uuid4().hex[:8]}",
             created=int(time.time()),
             model=self.full_name,
             choices=[Choice(message=Message(role="assistant", content=content))],
             usage=Usage(
-                prompt_tokens=len(last_msg), completion_tokens=len(content), total_tokens=0
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
             ),
         )
 
@@ -219,6 +226,18 @@ class ModelRegistry:
 # ══════════════════════════════════════════════════════════════════
 # Helpers
 # ══════════════════════════════════════════════════════════════════
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text (rough heuristic).
+
+    ~1 token per CJK char, ~1 token per 4 Latin chars.
+    """
+    if not text:
+        return 0
+    cjk = sum(1 for c in text if ord(c) > 0x4E00)
+    other = len(text) - cjk
+    return cjk + max(1, other // 4)
 
 
 def _extract_last_user_message(messages: list[Message]) -> str:

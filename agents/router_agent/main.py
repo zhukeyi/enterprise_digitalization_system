@@ -31,10 +31,16 @@ from agents.router_agent.models.response import (
 from agents.router_agent.routing.engine import RoutingEngine
 from agents.router_agent.routing.fallback import FallbackChain
 from shared.models import HealthResponse
+from shared.sdk.logging import setup_structured_logging
+from shared.sdk.metrics import setup_metrics
+from shared.sdk.otel_backend import get_default_backend as get_otel_backend
 
 # ── App Setup ───────────────────────────────────────────────────────
 
 logger = logging.getLogger("fde.router")
+
+# Phase 0: structured JSON logging for Loki ingestion
+setup_structured_logging()
 
 app = FastAPI(
     title="FDE Router Agent",
@@ -44,6 +50,9 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+# Phase 0: Prometheus /metrics endpoint
+setup_metrics(app)
 
 # ── Middleware ──────────────────────────────────────────────────────
 
@@ -162,6 +171,52 @@ try:
     logger.info("Marketing router registered at /api/marketing/*")
 except ImportError:
     logger.warning("Marketing agent router unavailable — /api/marketing endpoints disabled")
+
+# ── Dify Bridge Router (Phase 0: register previously unregistered) ──
+
+try:
+    from agents.dify_bridge import create_dify_router
+    from agents.orchestrator.tools.registry import ToolRegistry
+
+    _dify_registry = ToolRegistry()
+    app.include_router(create_dify_router(_dify_registry))
+    logger.info("Dify bridge router registered at /dify/*")
+except ImportError:
+    logger.warning("Dify bridge unavailable — /dify endpoints disabled")
+
+# ── IM Webhook Router (Phase 0: register previously unregistered) ──
+
+try:
+    from agents.im_agent.webhook_routes import router as im_router
+
+    app.include_router(im_router)
+    logger.info("IM webhook router registered at /im/webhook/*")
+except ImportError:
+    logger.warning("IM agent router unavailable — /im/webhook endpoints disabled")
+
+# ── Observability Router (Phase 1: platform monitoring) ──────────
+
+try:
+    from agents.observability_agent.middleware import APIMetricsMiddleware
+    from agents.observability_agent.router import router as obs_router
+    from agents.observability_agent.router import set_app as obs_set_app
+
+    app.add_middleware(APIMetricsMiddleware)
+    app.include_router(obs_router)
+    obs_set_app(app)
+    logger.info("Observability router registered at /api/observability/*")
+except ImportError:
+    logger.warning("Observability agent unavailable — monitoring endpoints disabled")
+
+# ── API Key auth + rate limit middleware (Phase 2) ──────────────
+
+try:
+    from agents.observability_agent.auth_middleware import APIKeyMiddleware
+
+    app.add_middleware(APIKeyMiddleware)
+    logger.info("APIKeyMiddleware registered (Phase 2 — per-key rate limiting)")
+except ImportError:
+    logger.warning("APIKeyMiddleware unavailable — rate limiting disabled")
 
 # ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
 
@@ -307,6 +362,34 @@ async def chat_completions(
 
         elapsed = (time.monotonic() - start_time) * 1000
         logger.info("trace=%s completed model=%s latency=%.1fms", trace_id, response.model, elapsed)
+
+        # Phase 0: emit LLM call to OTel/Langfuse backend
+        _otel = get_otel_backend()
+        usage = getattr(response, "usage", None)
+        if usage:
+            _otel.emit_llm_call(
+                trace_id=trace_id,
+                model=response.model,
+                prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                completion_tokens=getattr(usage, "completion_tokens", 0),
+                duration_ms=elapsed,
+            )
+
+            # Phase 2: record token usage for cost tracking
+            try:
+                from agents.observability_agent.token_tracker import record_token_usage
+
+                record_token_usage(
+                    trace_id=trace_id,
+                    model=response.model,
+                    prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                    completion_tokens=getattr(usage, "completion_tokens", 0),
+                    latency_ms=elapsed,
+                    agent_module="router_agent",
+                )
+            except Exception as tok_err:
+                logger.debug("token usage record skipped: %s", tok_err)
+
         return response
 
     except ValueError as e:
