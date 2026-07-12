@@ -25,26 +25,34 @@ litellm_settings:
   # Retry+fallback on provider errors (kept lean; no extra infra).
   num_retries: 2
 
+# NOTE: declare `litellm_provider` explicitly per model. This build does not
+# infer the `zhipu/` / `qwen/` prefixes from the model string (it raises
+# "LLM Provider NOT provided"); explicit provider is the robust, version-
+# independent form.
 model_list:
   - model_name: fde-economy
     litellm_params:
-      model: deepseek/deepseek-chat
+      model: deepseek-chat
+      litellm_provider: deepseek
       api_key: os.environ/DEEPSEEK_API_KEY
       temperature: 0.3
 
   - model_name: fde-default
     litellm_params:
-      model: deepseek/deepseek-chat
+      model: deepseek-chat
+      litellm_provider: deepseek
       api_key: os.environ/DEEPSEEK_API_KEY
 
   - model_name: fde-premium
     litellm_params:
-      model: zhipu/glm-4-flash
+      model: glm-4-flash
+      litellm_provider: zhipu
       api_key: os.environ/GLM_API_KEY
 
   - model_name: fde-frontier
     litellm_params:
-      model: qwen/qwen-max
+      model: qwen-max
+      litellm_provider: qwen
       api_key: os.environ/QWEN_API_KEY
 
 # Routing fallbacks: if a primary alias errors, try the next.
