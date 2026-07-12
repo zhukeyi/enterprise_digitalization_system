@@ -26,10 +26,17 @@ litellm_settings:
   num_retries: 2
 
 # NOTE: declare `custom_llm_provider` explicitly per model. This build does
-# not infer the `zhipu/` / `qwen/` prefixes from the model string (it raises
-# "LLM Provider NOT provided"); explicit provider is the robust, version-
-# independent form. The config key is `custom_llm_provider` (not the
-# `litellm_provider` alias, which this build ignores).
+# not infer the `zhipu/` / `qwen/` prefixes from the model string, and the
+# config key is `custom_llm_provider` (the `litellm_provider` alias is ignored).
+#
+# Provider availability in ghcr.io/berriai/litellm:main-latest (litellm 1.93.0):
+#   - deepseek  -> module present, works
+#   - qwen      -> module is `dashscope`; use custom_llm_provider: dashscope
+#   - zhipu     -> NO implementation module in this image ("Unsupported provider").
+#                  glm-4-flash is still served by FDE's own router_agent adapter
+#                  (backend .env GLM_API_KEY); it is omitted here until a full
+#                  LiteLLM image (or custom build) that ships the zhipu provider
+#                  is used. Re-enable fde-premium below once available.
 model_list:
   - model_name: fde-economy
     litellm_params:
@@ -44,16 +51,17 @@ model_list:
       custom_llm_provider: deepseek
       api_key: os.environ/DEEPSEEK_API_KEY
 
-  - model_name: fde-premium
-    litellm_params:
-      model: glm-4-flash
-      custom_llm_provider: zhipu
-      api_key: os.environ/GLM_API_KEY
+  # fde-premium (zhipu/glm-4-flash) — disabled: zhipu provider absent in image.
+  # - model_name: fde-premium
+  #   litellm_params:
+  #     model: glm-4-flash
+  #     custom_llm_provider: zhipu
+  #     api_key: os.environ/GLM_API_KEY
 
   - model_name: fde-frontier
     litellm_params:
       model: qwen-max
-      custom_llm_provider: qwen
+      custom_llm_provider: dashscope
       api_key: os.environ/QWEN_API_KEY
 
 # Routing fallbacks: if a primary alias errors, try the next.
