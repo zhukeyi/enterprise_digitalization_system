@@ -1,179 +1,276 @@
-# FDE 平台开源项目优化路线图
+# FDE 平台开源集成与产品化开发方案（v1.0）
 
-> 目标：以成熟开源项目逐模块强化现有系统，遵循"先补数据入口质量（最高 ROI），再做智能层，最后增强层"的优先级。所有候选均核实许可、星数与适配度。
-
-生成时间：2026-07-13
+> **文档定位**：由原《开源项目优化路线图》+《战略评审》合并升级为完备开发方案。
+> **核心修正**：单纯堆叠横向 OSS 不构成产品策略。本方案以"横向 OSS 强化（抬底线）+ 纵向产品化补齐（打包装/多租户/培训/差异化）"双线推进，把 FDE 从"可演示"推进到"可商业化交付的产品"。
+> **生成时间**：2026-07-13　**状态**：已评审，待启动
 
 ---
 
-## 〇、架构总览：开源项目如何拼装
+## 一、背景与基线
+
+### 1.1 现状基线
+
+| 维度 | 现状 |
+| :--- | :--- |
+| 交付进度 | V4 工程底座 ✅；V5 七步法 ✅（审计 ~95%）；全系统运行监测平台 ✅ |
+| 规模 | 16 后端智能体 + 9 前端门户，全量测试 1227 个 |
+| 部署 | 单台 Oracle ARM（**2C/11G/96G**），systemd + nginx，自签证书；FDE 后端 + Dify + Qdrant 同机 |
+| 约束 | 无 Postgres（SQLite 兜底）；pricing/marketing 被 numpy-only 约束；无 K8s |
+| 商业定位（V5 说明书） | 基础版 1-3（基建+交付+培训）一次性交付费；增值模块 4-7（情报/营销/裁员/定价）按年订阅；全家桶折扣 |
+
+### 1.2 商业目标
+
+对照 `docs/v5-enterprise-delivery-plan.md`：从"AI 平台"到"可交付的商业产品"。本方案的目标是补齐"可商业化交付"的最后差距——集中在**打包部署、多租户计费、培训交付物、基础设施可信度**四点，而非再堆功能。
+
+### 1.3 战略评审结论（对本方案的修正）
+
+1. **OSS 方向合适但非充分**：横向 OSS（网关/采集/解析/观测）抬高底线可信度，但 V5 卖点是纵向垂直模块；OSS 应隐形于其后做基础设施。
+2. **资源硬约束**：现 2C/11G 单机已偏紧，无法再承载 crawl4ai(Playwright/Chromium)+Langfuse(ClickHouse) 全套。必须取舍或升配/分机。
+3. **产品化缺口（OSS 未覆盖）**：一键部署、多租户隔离、配置驱动、升级路径、客户 onboarding——这些决定"能否打包为产品"的程度高于 OSS 选型。
+4. **差异化护城河 = 垂直模块**（裁员防呆 5 步 / GEO 营销 / 动态定价 RL），不可被标准 OSS 同质化稀释。
+5. **唯一"工程质量+商业使能"双赢项 = LiteLLM**：虚拟 Key + 按租户预算直接承载年订阅计费，最高优先。
+
+---
+
+## 二、目标架构
 
 ```
-                         ┌──────────────────────────────────────────────┐
-   采集层（情报/RAG 入口） │  RSSHub(1000+源)  crawl4ai(LLM-ready 提取)     │
-                         │  changedetection.io(变化监控)  FreshRSS(骨干) │
-                         └───────────────┬──────────────────────────────┘
-                                         │ webhook / API
-                         ┌───────────────▼──────────────────────────────┐
-   网关层                │  LiteLLM (统一 100+ 模型 OpenAI 接口/Key/成本) │
-                         │  ↕ 取代 router_agent 自研 4 适配器            │
-                         └───────────────┬──────────────────────────────┘
-                                         │
-                ┌────────────────────────┼─────────────────────────┐
-                ▼                        ▼                         ▼
-   ┌────────────────────┐   ┌─────────────────────┐   ┌────────────────────┐
-   │ data_agent(情报)   │   │ ingestion_agent     │   │ analysis_agent     │
-   │ + GEO Guard        │   │ + Docling(解析升级) │   │ + Vanna(NL2SQL升级)│
-   └────────────────────┘   └─────────────────────┘   └────────────────────┘
-                │                        │                         │
-                └────────────┬───────────┴─────────────────────────┘
-                             ▼
-                ┌────────────────────────────────┐
-   观测层        │ Langfuse (经 LiteLLM callback) │  ← 升级 observability_agent
-                │ ClickHouse 后端 / OTel 原生    │     (现内存环缓冲单实例够用)
-                └────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                    客户租户（年订阅单元）                              │
+│   基础版(①②③)              增值模块(④⑤⑥⑦ 任选)                       │
+└──────────────┬───────────────────────────────────────────────────────┘
+               │ HTTPS
+┌──────────────▼───────────────────────────────────────────────────────┐
+│  nginx 网关 (8443)  +  Docker Compose 一键部署                         │
+│   /fde-api/ /obs/ /portal/ /hr/ /pricing/ /marketing/ /intel/ /hub/   │
+└──────────────┬───────────────────────────────────────────────────────┘
+               │
+┌──────────────▼───────────────────────────────────────────────────────┐
+│  LiteLLM 网关 (统一 100+ 模型 / 虚拟 Key / 按租户成本预算 / fallback)  │
+│   ← 多租户隔离与计费基座；替代 router_agent 自研 4 适配器              │
+│   callback → Langfuse 观测                                             │
+└──────┬───────────────┬───────────────────────┬────────────────────────┘
+       │               │                       │
+┌──────▼──────┐  ┌──────▼────────┐  ┌──────────▼──────────┐
+│ FDE 后端     │  │ 采集层(可拆    │  │ 观测层              │
+│ LangGraph    │  │  worker 机)   │  │ Langfuse+ClickHouse │
+│ 16 Agents    │  │ RSSHub        │  │ (P3，需升配)        │
+│ +Docling     │  │ crawl4ai      │  │ 现内存环缓冲(单机)   │
+│ +Vanna       │  │ changedetect  │  │                     │
+└──────────────┘  └───────────────┘  └─────────────────────┘
 ```
 
-**核心洞察**：LiteLLM 是粘合枢纽——统一模型接口、经 callback 自动喂 Langfuse 观测、与 observability_agent 的 token_tracker/cost 对齐；crawl4ai/RSSHub 喂 data_agent；Docling 喂 ingestion_agent；Vanna 升级 analysis_agent。生态自洽，无需重复造轮子。
+**设计原则**
+
+- **OSS 隐形化**：客户感知的是垂直模块门户，LiteLLM/crawl4ai/Docling 不可见。
+- **租户隔离靠 LiteLLM 虚拟 Key**：每租户一 Key，绑定模型白名单 + 预算 + 限流。
+- **采集层可拆**：Chromium 类重负载放独立 worker 机，保护主机。
+- **观测可降级**：单机用内存环缓冲，多机/企业版用 Langfuse 持久化。
 
 ---
 
-## 一、情报模块（data_agent + intelligence-portal）—— 第一步
+## 三、WBS 总览（7 阶段）
 
-### 1.1 现状评估（已读代码）
+| 阶段 | 名称 | 主线 | 优先级 | 工作量 | 依赖 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **P0** | LiteLLM 网关统一 + 多租户基座 | 横向/商业使能 | 🔴 最高 | 8d | — |
+| **P0** | 一键打包部署（Docker Compose + 升级路径） | 产品化 | 🔴 最高 | 6d | — |
+| **P1** | 情报源扩展（RSSHub + crawl4ai worker） | 横向 | 🟠 高 | 7d | P0 |
+| **P1** | 培训交付物补齐 | 产品化/审计缺口 | 🟠 高 | 8d | — |
+| **P2** | RAG 解析升级（Docling） | 横向 | 🟡 中 | 5d | P0 |
+| **P2** | 分析层升级（Vanna） | 横向 | 🟡 中 | 5d | P0 |
+| **P3** | 观测持久化（Langfuse） | 横向 | 🟢 低（需升配） | 6d | 升配 |
 
-`data_agent` 是完整 ETL：`BaseScraper` 抽象 → `HTTPScraper/RSSScraper/APIScraper` → `pipeline` 清洗 → `geo_guard`（GEO 污染/AI 生成/提示注入检测）→ `push_service`。设计扎实。
+> 关键路径：P0(LiteLLM) → P1(情报) → P2(RAG) → P3(观测)；P0(打包) 与 P1(培训) 可并行。
 
-**短板**：
-- `HTTPScraper` 用 stdlib `HTMLParser` 解析，仅抓 `article/.post/.item` 类标签，无 JS 渲染、无反爬、无结构化提取——复杂页面几乎抓不到东西。
-- RSS 采集依赖源站原生 RSS；微博/知乎/B站/公众号等中文社交生态无 RSS，等于覆盖盲区。
-- 无"变化监控"能力（跨次 diff、调度、状态），竞品页/价格变化只能靠定时全量重抓。
-- 无统一 RSS 骨干，源管理偏弱。
+---
 
-### 1.2 changedetection.io + data_agent 方案评估
+## 四、各阶段详细任务
 
-**结论：方向正确、是好的增量，但不是该模块最高杠杆项。**
+### P0-A：LiteLLM 网关统一 + 多租户基座（8d）
 
-- ✅ 补的正是 data_agent 缺的：状态化变化 diff + 调度 + 80+ 通知（含钉钉/企微，贴合 IM 栈）+ REST API。Flask+SQLite+Docker 轻量，契合单主机。
-- ✅ Webhook out → data_agent 新增一个 ingest webhook 端点 → 进 `pipeline` → `intel` Alert 视图。契约干净，改动小。
-- ⚠️ 增加一个需运维的组件（主机已跑 FDE 后端 + Dify + Qdrant + nginx）。
-- ⚠️ 与 crawl4ai 职责需划清：changedetection.io = "X 何时变了"；crawl4ai = "X 的干净内容是什么"。互补非冗余。
-- ⚠️ 仅当"竞品/价格/网页变化监控"是真实业务需求时才上；否则属过度建设。
+**目标**：用 LiteLLM 替代 router_agent 自研 4 适配器，并建立按租户的 Key/预算/计费基座。
 
-### 1.3 情报模块优化分层（推荐顺序）
-
-| 优先级 | 项目 | 许可/热度 | 作用 | 集成方式 |
+| 任务 | 改动点 | 输入 | 输出/验收 | 工作量 |
 | :--- | :--- | :--- | :--- | :--- |
-| **P0** | **RSSHub** | MIT / 30k★ | 1000+ 路由，把微博/知乎/B站/公众号/Twitter/Reddit 等无 RSS 站点变 RSS | 自托管实例，data_agent 的 `RSSScraper` 直接订阅 RSSHub 路由 URL |
-| **P0** | **crawl4ai** | Apache-2.0 / 67k★ | LLM-ready Markdown 提取、Playwright JS 渲染、反爬、结构化抽取 | 新增 `Crawl4AIScraper` 注册到 `ScraperRegistry`，替代/补强 `HTTPScraper` |
-| **P1** | **changedetection.io** | Apache-2.0 / 28k★ | 竞品页/价格/内容变化监控 + 80 通知 | Webhook → data_agent 新增 `/api/intelligence/ingest` 端点 |
-| **P2** | **FreshRSS** / **Miniflux** | AGPL / Apache | RSS 聚合骨干（OPML/调度/过滤/扩展） | 作 RSS 后端，data_agent 经其 REST API 取条目 |
-| **P3** | **SearXNG** | AGPL-3.0 | 元搜索，广谱 web 采集 | JSON API 作为 API 源接入 `APIScraper` |
+| L-1 LiteLLM 部署 | `deploy/litellm/config.yaml`、docker-compose | 模型清单 | 容器 :4000 起，OpenAI 兼容接口通 | 1d |
+| L-2 适配器迁移 | `router_agent/adapters/*` → LiteLLM config | 现有 4 适配器 | chat/embedding 经 LiteLLM 透传，响应格式一致 | 2d |
+| L-3 token/cost 对接 | `observability_agent/token_tracker.py` | LiteLLM spend callback | token_tracker 改读 LiteLLM cost，预算/降级逻辑保留 | 1d |
+| L-4 多租户虚拟 Key | LiteLLM virtual keys + budget | V5 租户模型 | 每租户 Key + 模型白名单 + 预算 + 限流；超额触发降级 | 2d |
+| L-5 回归与防呆 | `tests/` | 现有 router/observability 测试 | 全量回归通过；新增 LiteLLM 集成测试 | 1.5d |
+| L-6 文档 | `docs/` | — | 网关迁移说明 + 租户配置手册 | 0.5d |
 
-> 第一步只做 P0：RSSHub + crawl4ai。这两项直接解决"源覆盖盲区"和"提取质量差"两个根因，性价比远高于先上 changedetection.io。
+**风险**：侵入 router 核心链路（R1，高影响）。**缓解**：保留原适配器作 fallback 适配层，灰度切换；L-5 全量回归门禁。
 
----
+### P0-B：一键打包部署（6d）
 
-## 二、网关模块（router_agent）—— 第二步（全系统最高杠杆）
+**目标**：客户买回 30 分钟跑起来；具备升级路径。
 
-| 项 | 内容 |
-| :--- | :--- |
-| 项目 | **LiteLLM**（BerriAI/litellm） |
-| 许可/热度 | MIT / 18k★ / Docker 拉取 2.4 亿 |
-| 现状 | router_agent 自研 4 模型适配器 + MockAdapter，token 计数靠估算，成本/路由/fallback 自建 |
-| LiteLLM 提供 | 100+ 提供商统一 OpenAI 接口、虚拟 Key、按项目/用户成本追踪、自动 fallback/重试/负载均衡、guardrails、缓存 |
-| 适配点 | **可替代自研 4 适配器**；observability_agent 的 token_tracker/budget 直接对接 LiteLLM 的成本追踪 |
-| 风险 | 侵入 router_agent 核心链路，需充分回归测试；但 LiteLLM 兼容 OpenAI 客户端，业务侧改动小 |
-| 部署 | Docker，`:4000` 端口，`config.yaml` 配模型列表 |
-
-**为何是全系统最高杠杆**：网关是所有 LLM 调用咽喉。统一后，新增模型从"写适配器+改计费+改 fallback"变成"改一行 config"，且天然对接 Langfuse 观测。
-
----
-
-## 三、解析与 RAG 模块（ingestion_agent + rag_agent）—— 第三步
-
-| 优先级 | 项目 | 许可/热度 | 作用 | 集成方式 |
-| :--- | :--- | :--- | :--- | :--- |
-| **P0** | **Docling**（IBM） | Apache-2.0 / 15k★ | PDF/DOCX/PPTX 表格/布局/方程结构化解析，表格准确率 93.6% | ingestion_agent 解析层接 Docling `DocumentConverter`，输出 Markdown 入 chunking |
-| P1 | **LightRAG** / **GraphRAG** | Apache/MIT | 关系型检索（实体关系图），补纯向量检索短板 | rag_agent 增 graph 检索分支，与 HybridSearch 并行召回 |
-| P1 | **bge-reranker-v2-m3** | MIT | 比现 reranker 更强 | 替换 rag_agent reranker 模型 |
-
-> 解析是 RAG 质量天花板——"解析错了，下游全是垃圾"。Docling 是当前最强免费 OSS 布局解析器，且与现有 ONNX 嵌入流程正交。
-
----
-
-## 四、分析模块（analysis_agent）—— 第四步
-
-| 项 | 内容 |
-| :--- | :--- |
-| 项目 | **Vanna**（vanna-ai/vanna） |
-| 许可/热度 | MIT / 13.5k★ |
-| 现状 | analysis_agent = 规则引擎 + LLM fallback + MockExecutor，无自学习、无 schema 向量化 |
-| Vanna 提供 | RAG-for-SQL：把 DDL/表结构/历史 SQL/文档向量化检索作上下文；自学习（成功 SQL 自动入库）；支持 Qdrant/Chroma；SQL 本地执行不出数据 |
-| 适配点 | 替换/包裹 analysis_agent 的 NL2SQL 引擎；向量库复用现有 Qdrant；LLM 经 LiteLLM |
-| 风险 | 低——analysis_agent 已隔离为独立 Worker，替换内部实现不影响编排 |
-
----
-
-## 五、观测模块（observability_agent）—— 第五步（按需）
-
-| 项 | 内容 |
-| :--- | :--- |
-| 项目 | **Langfuse** |
-| 许可/热度 | MIT（核心）/ 22k★ / 自托管 Docker/K8s |
-| 现状 | observability_agent 用内存环缓冲（trace 20k/audit 50k/token 50k），单实例够用，重启丢历史 |
-| Langfuse 提供 | 持久化 LLM 追踪/成本/评测/Prompt 管理；ClickHouse 后端；OTel 原生；100+ 集成（含 Dify/LiteLLM） |
-| 适配点 | **不替换** observability_agent，而是经 LiteLLM callback 自动上报；observability_agent 前端可继续用，或对接 Langfuse UI |
-| 何时上 | 当需要跨重启历史追溯、多实例、或 LLM-as-judge 评测时。当前单实例内存方案可继续用 |
-| 风险 | ClickHouse 较重，单主机资源需评估（可先用 Docker 小规模） |
-
----
-
-## 六、其余模块增强（第六步及以后）
-
-| 模块 | 候选 | 适配点 | 优先级 |
+| 任务 | 改动点 | 输出/验收 | 工作量 |
 | :--- | :--- | :--- | :--- |
-| marketing_agent（GEO） | **SearXNG** + crawl4ai | GEO 可见度追踪（搜索排名）+ 内容研究素材抓取 | 中 |
-| map_agent（地图） | **deck.gl** / **kepler.gl** | 更强地理可视化（现模块已冻结，待重启评估） | 低 |
-| pricing_agent（定价） | statsmodels（若放宽 numpy-only）/ Optuna | 时序预测增强、超参优化 | 低（受服务器约束） |
-| im_agent（IM） | — | 已有 3 适配器 Stub，按业务推进即可 | 按需 |
-| client_agent（桌面） | — | Tauri 客户端已成形 | — |
-| governance/compliance/business | — | Worker 性质，随编排增强自然受益 | — |
+| D-1 主 Compose | `deploy/docker-compose.prod.yml` | FDE 后端 + Qdrant + LiteLLM + nginx + 前端 dist 一键起 | 2d |
+| D-2 环境配置化 | `.env.example` 拆分 base/tenant | 行业/租户配置驱动，无硬编码 | 1d |
+| D-3 数据卷与持久化 | volumes + 备份脚本 | Qdrant/SQLite/LiteLLM DB 卷挂载 + 备份/恢复 | 1d |
+| D-4 升级路径 | `scripts/upgrade.sh` | 版本滚动升级，不丢数据 | 1d |
+| D-5 安装文档 | `docs/deployment/` | 30 分钟安装指南 + 故障排查 | 1d |
 
----
+**验收**：干净主机执行 `docker compose up` → 全部门户 200，可创建租户并跑通一次 RAG 问答。
 
-## 七、落地优先级与节奏建议
+### P1-A：情报源扩展（7d）
 
-| 阶段 | 模块 | 动作 | 预期收益 |
+**目标**：data_agent 源覆盖 +10x、提取质量质变。**注意资源约束**：crawl4ai 的 Chromium 必须评估或拆 worker 机。
+
+| 任务 | 改动点 | 输出/验收 | 工作量 |
 | :--- | :--- | :--- | :--- |
-| **Phase 1** | 情报 | RSSHub + crawl4ai 接入 data_agent | 源覆盖 +10x，提取质量质变 |
-| **Phase 2** | 网关 | LiteLLM 替代自研适配器 | 模型扩展成本从天级降到分钟级，成本追踪自动化 |
-| **Phase 3** | RAG | Docling 接入 ingestion_agent | 文档（尤其表格）解析准确率大幅提升 |
-| **Phase 4** | 分析 | Vanna 升级 analysis_agent | NL2SQL 准确率与自学习闭环 |
-| **Phase 5** | 观测 | Langfuse（按需） | 持久化追踪 + 评测闭环 |
-| **Phase 6** | 增强 | SearXNG/deck.gl 等 | GEO/地图能力增强 |
+| I-1 RSSHub 自托管 | `deploy/` 加 RSSHub 容器 | RSSHub 起，data_agent `RSSScraper` 订阅 1000+ 路由 | 1d |
+| I-2 crawl4ai Scraper | `data_agent/scrapers/crawl4ai_scraper.py` 注册 `ScraperRegistry` | 新增 SourceType 或复用 WEB；输出 LLM-ready Markdown | 2d |
+| I-3 资源评估/拆机 | Chromium 内存压测；必要时拆 crawl worker | 主机内存安全（≤70%）；或 worker 机方案 | 1d |
+| I-4 情报门户适配 | `intelligence-portal` SourceView | RSSHub/crawl4ai 源可管理、可预览 | 1.5d |
+| I-5 测试 | `data_agent/tests/` | crawl4ai/rsshub 集成测试 + 回归 | 1d |
+| I-6 文档 | `docs/` | 源扩展配置手册 | 0.5d |
 
-### 决策原则
+**风险**：Chromium 吃内存（R2）。**缓解**：I-3 先压测，超阈则拆 worker 机，绝不拖垮主服务。
 
-1. **先入口后智能**：采集/解析/网关质量决定一切下游上限，优先补。
-2. **单主机资源约束**：每引入一个 Docker 组件评估内存（现 11G）；RSSHub/crawl4ai/changedetection.io/LiteLLM 都较轻，Langfuse(ClickHouse)最重，放最后。
-3. **许可合规**：AGPL 项目（FreshRSS/SearXNG）若做商业分发需法务确认；MIT/Apache 无虞。
-4. **不重复造轮子**：LiteLLM/Vanna/Docling 都是各自领域事实标准，自研替代是负 ROI。
+### P1-B：培训交付物补齐（8d，审计 ❌ 缺口）
+
+**目标**：补齐说明书③要求的视频/题库/PPT/手册，使③达可交付。
+
+| 任务 | 输出/验收 | 工作量 |
+| :--- | :--- | :--- |
+| T-1 用户手册（V5 专用） | `docs/training/manual.md` 三级（操作员/分析师/架构师） | 2d |
+| T-2 题库（30-50 题） | `docs/training/exam-bank.md` 含答案与实操题 | 2d |
+| T-3 视频（5-10 个） | 录屏 3-5 分钟/个 | 3d |
+| T-4 PPT + 考证流程 | 培训 PPT + 认证发放流程 | 1d |
+
+### P2-A：RAG 解析升级 Docling（5d）
+
+| 任务 | 输出/验收 | 工作量 |
+| :--- | :--- | :--- |
+| R-1 Docling 集成 | `ingestion_agent` 解析层接 `DocumentConverter`，输出 Markdown 入 chunking | 2d |
+| R-2 表格/布局回归 | 对比 PyPDF vs Docling，表格准确率验证 | 1.5d |
+| R-3 测试 + 文档 | 解析测试 + 手册 | 1.5d |
+
+### P2-B：分析层升级 Vanna（5d）
+
+| 任务 | 输出/验收 | 工作量 |
+| :--- | :--- | :--- |
+| A-1 Vanna 集成 | `analysis_agent` NL2SQL 包裹 Vanna；向量库复用 Qdrant；LLM 经 LiteLLM | 2d |
+| A-2 训练数据 | DDL/表结构/历史 SQL 向量化入库 | 1.5d |
+| A-3 测试 + 文档 | NL2SQL 准确率测试 + 手册 | 1.5d |
+
+### P3：观测持久化 Langfuse（6d，需升配）
+
+| 任务 | 输出/验收 | 工作量 |
+| :--- | :--- | :--- |
+| O-1 升配评估 | ClickHouse 资源测算，决定升配/多机 | 1d |
+| O-2 Langfuse 部署 | Docker/K8s，ClickHouse 后端 | 2d |
+| O-3 LiteLLM callback 接入 | LLM 调用自动上报 Langfuse | 1d |
+| O-4 observability_agent 对接 | 前端可选接 Langfuse UI；保留现内存方案作降级 | 1.5d |
+| O-5 测试 + 文档 | 端到端追踪验证 + 手册 | 0.5d |
 
 ---
 
-## 附录：候选项目速查表
+## 五、多租户与计费设计
 
-| 项目 | 模块 | 许可 | Stars | 一句话 |
-| :--- | :--- | :--- | :--- | :--- |
-| RSSHub | 情报 | MIT | 30k+ | 万物皆可 RSS，1000+ 路由 |
-| crawl4ai | 情报/RAG | Apache-2.0 | 67k | LLM-ready 爬虫，#1 trending |
-| changedetection.io | 情报 | Apache-2.0 | 28k | 网页变化监控 + 80 通知 |
-| FreshRSS | 情报 | AGPL-3.0 | — | 自托管 RSS 骨干 |
-| SearXNG | 情报/营销 | AGPL-3.0 | — | 自托管元搜索 |
-| LiteLLM | 网关 | MIT | 18k | 100+ 模型统一 OpenAI 网关 |
-| Docling | RAG | Apache-2.0 | 15k | IBM 文档布局解析（表格 93.6%） |
-| LightRAG | RAG | Apache/MIT | — | 图+向量 RAG |
-| Vanna | 分析 | MIT | 13.5k | RAG-for-SQL 自学习 |
-| Langfuse | 观测 | MIT(core) | 22k | LLM 工程平台，ClickHouse+OTel |
-| deck.gl | 地图 | MIT | — | 地理可视化 |
+V5 商业模式 = 年订阅，要求租户隔离。**LiteLLM 虚拟 Key 承载此层**：
+
+```
+租户(Tenant) ──┬── LiteLLM Virtual Key（模型白名单 + 预算 + RPM/TPM 限流）
+               ├── 绑定增值模块授权（情报/营销/裁员/定价 开关）
+               ├── 用量/成本记入租户账单（LiteLLM spend → 计费表）
+               └── 超预算 → Cost Canary 降级（observability_agent budget 复用）
+```
+
+| 订阅层 | 模型权限 | 预算 | 模块授权 |
+| :--- | :--- | :--- | :--- |
+| 基础版 | 经济模型（mock/小模型） | 低 | ①②③ |
+| 增值单模块 | +该模块所需模型 | 中 | +④ 或 ⑤ 或 ⑥ 或 ⑦ |
+| 全家桶 | 全模型 | 高 | ①-⑦ |
+
+> 计费表建议复用 observability_agent 的 cost_report，按租户聚合，导出对账。
+
+---
+
+## 六、资源与部署规划
+
+| 形态 | 组件 | 适用 | 说明 |
+| :--- | :--- | :--- | :--- |
+| **单机版（现机）** | FDE + Dify + Qdrant + LiteLLM + RSSHub | P0/P1-RSSHub | 2C/11G 可承载，监控内存≤70% |
+| **两机版** | + 独立 crawl worker（crawl4ai/Chromium） | P1-crawl4ai | 保护主服务，crawl4ai 重负载隔离 |
+| **升配/多机版** | + Langfuse + ClickHouse | P3 | ClickHouse 重，需 ≥4C/16G 专用 |
+
+**决策门**：每引入一个 Docker 组件先做内存压测，超 70% 阈值即触发拆机或延后。
+
+---
+
+## 七、风险与缓解
+
+| 风险 | 影响 | 概率 | 缓解 |
+| :--- | :--- | :--- | :--- |
+| R1 LiteLLM 迁移破坏路由链 | 高 | 中 | 保留原适配器 fallback 层；灰度切换；全量回归门禁 |
+| R2 Chromium 拖垮主机 | 高 | 中 | P1-I-3 先压测；超阈拆 worker 机 |
+| R3 多组件运维复杂度↑ → 客户 TCO↑ | 中 | 高 | 一键 Compose + 升级脚本；重负载可卸载项文档化 |
+| R4 AGPL 组件（FreshRSS/SearXNG）商业分发合规 | 中 | 低 | 仅内部用或法务确认；面向客户用 MIT/Apache 组件 |
+| R5 OSS 同质化稀释差异化 | 中 | 中 | OSS 隐形化；护城河押垂直模块，不在网关/采集上做卖点 |
+| R6 升配成本 | 中 | 中 | P3 非必需可延后；单机版先行满足多数客户 |
+
+---
+
+## 八、质量门禁与验收
+
+每阶段必须通过：
+
+1. `ruff check` 零告警 → `black` → `mypy --strict`
+2. `pytest` 全量通过（基线 1227，新增不得回退）+ 该阶段新增测试
+3. 前端 `npm run build` 通过
+4. 线上部署后对应端点 200，30 分钟稳定
+5. 阶段文档入库
+
+**整体产品化验收**（全部阶段完成）：
+- 干净主机 30 分钟一键起；
+- 可创建租户、跑通基础版 ①②③ + 至少一个增值模块 ④-⑦；
+- LiteLLM 记录该租户成本，可导出对账；
+- 培训手册/题库/视频可交付客户。
+
+---
+
+## 九、里程碑与排期
+
+| 里程碑 | 内容 | 累计工作量 |
+| :--- | :--- | :--- |
+| **M1 网关+打包基座** | P0-A + P0-B 完成 | 14d |
+| **M2 情报可信+培训可交付** | P1-A + P1-B 完成 | 29d |
+| **M3 RAG+分析质量抬升** | P2-A + P2-B 完成 | 39d |
+| **M4 观测持久化（升配后）** | P3 完成 | 45d |
+
+> 单人节奏约 9 周；P0 两项并行可压缩。P3 受升配节奏制约，可独立排期。
+
+---
+
+## 十、许可合规速查
+
+| 组件 | 许可 | 商业分发 | 备注 |
+| :--- | :--- | :--- | :--- |
+| LiteLLM | MIT | ✅ 安全 | 网关核心 |
+| crawl4ai | Apache-2.0 | ✅ 安全 | 采集 |
+| RSSHub | MIT | ✅ 安全 | 采集 |
+| changedetection.io | Apache-2.0 | ✅ 安全 | 变化监控（P1 备选） |
+| Docling | Apache-2.0 | ✅ 安全 | 解析 |
+| Vanna | MIT | ✅ 安全 | NL2SQL |
+| Langfuse | MIT(core) | ✅ 安全 | 观测 |
+| FreshRSS | AGPL-3.0 | ⚠️ 需法务 | 仅内部用 |
+| SearXNG | AGPL-3.0 | ⚠️ 需法务 | 仅内部用 |
+
+---
+
+## 十一、与 V5 说明书的关系
+
+- 本方案**不替代** V5 七步法，而是为其**补强基础设施底座 + 补齐产品化包装**。
+- V5 纵向模块（④情报/⑤营销/⑥裁员/⑦定价）继续自建，是差异化护城河；本方案的横向 OSS 隐形支撑它们。
+- P1-B 培训直接闭合 V5 审计 ❌ 缺口；P0-B 打包直接服务"可交付商业产品"定位。
+- 推荐客户交付顺序不变（②→④→⑥→⑤→⑦），本方案在其下做地基。
+
+---
+
+*文档路径：docs/oss-optimization-roadmap.md（已升级为完备开发方案）*
+*修订记录：v1.0 2026-07-13 合并路线图+战略评审，新增 WBS/多租户/资源规划/风险/里程碑*
