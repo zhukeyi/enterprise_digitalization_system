@@ -1,472 +1,338 @@
-# FDE企业级AI平台开发计划（v2.0）
+# FDE 企业级 AI 平台（enterprise_digitalization_system）
 
-> 本版整合了：七层架构底座 + RAGFlow/Dify底座 + LangGraph多智能体编排 + 人力资源智能决策层 + **地图AI分析模块**，形成完整的企业级AI数字化平台开发计划。
+> 以 **LangGraph 多智能体编排** 为核心、**企业 RAG（Qdrant + ONNX 嵌入）** 为知识底座、**Dify** 为应用编排层的可私有化部署企业级 AI 数字化平台。已完成 V4 工程底座与 V5「企业落地七步法」商业化交付，并内置 **全系统运行监测平台**。
 
+- 仓库：`git@github.com:zhukeyi/enterprise_digitalization_system.git`（分支 `main`，Trunk-Based 开发）
+- 生产环境：`https://217.142.246.70:8443`（Oracle ARM 实例，自签名证书，systemd + nginx 托管）
+- 代码规模：**16 个后端智能体 + 9 个前端门户**，全量测试 **1227 个**
+- 商业交付审计达成度：**~95%**（V5 P0/P1/P2 共 10 项缺口已全部闭合）
 
-## 一、项目概述
+---
 
-### 1.1 项目目标
+## 一、项目现状（Current Status）
 
-开发一套可复用、可私有化部署的企业级AI数字化平台，以 **RAGFlow + Dify** 为底座，以 **LangGraph** 构建多智能体协作框架，在此基础上构建 **11大模块**，覆盖智能路由、企业RAG、IM集成、桌面助手、数据情报、智能分析、人力资源决策、**地图空间智能分析**等完整能力。
+| 阶段 | 内容 | 状态 |
+| :--- | :--- | :--- |
+| **V4 工程底座** | Monorepo + 统一 API 网关 + LangGraph Supervisor-Worker + 企业 RAG + Dify 集成 + 桌面客户端 + IM 集成 + 评测/CI-CD | ✅ 已完成 |
+| **V5 企业落地七步法** | 基础 → 交付（驾驶舱）→ 培训 → 情报 → 营销 → 裁员 → 定价，7 个 Web 门户 + 统一入口 | ✅ 已完成并部署 |
+| **全系统运行监测平台** | Overview / Token Router / API 管理 / 服务健康 / RAG 检视 / Trace Viewer / 审计与告警 | ✅ 已完成并部署 |
+| **V5 商业审计** | P0（Dify 工具/HR 裁员模拟器/情报 4 视图）+ P1（定价弹性竞品/Dify 工作流/培训交付物）+ P2（多语言/图表组件/测试） | ✅ 10/10 闭合，~95% |
 
-### 1.2 核心原则
+> 设计文档详见 `docs/`：`v5-enterprise-delivery-plan.md`、`v5-audit-report.md`、`v5-observability-platform-design.md`、`v5-observability-dev-plan.md`。
 
-| 原则                    | 说明                                                   |
-| :---------------------- | :----------------------------------------------------- |
-| **模块化**              | 各模块松耦合，可独立安装、升级、替换                   |
-| **本地优先**            | 涉及PII和客户私域数据的组件必须本地部署                |
-| **LLM只规划，后端执行** | Main Agent输出结构化指令，真正的工具调用由后端代码执行 |
-| **权限硬过滤**          | 权限控制在后端实现，不经过LLM，杜绝提示词注入          |
-| **零幻觉**              | 合规场景强制溯源引用，相似度低于阈值直接拒答           |
-| **防呆设计**            | 所有操作环节包含确认、校验、回退机制                   |
+---
 
+## 二、快速访问（已部署门户）
 
-## 二、技术栈总览
+所有前端为 SPA，后端 API 统一前缀 `/fde-api/`。
 
-| 层级              | 组件                                      | 选型                                                  | 选型理由 |
-| :---------------- | :---------------------------------------- | :---------------------------------------------------- | :------- |
-| **RAG引擎底座**   | RAGFlow                                   | 文档解析业界领先（12+格式），v0.26.0新增7大企业连接器 |          |
-| **应用编排层**    | Dify                                      | 可视化工作流编排、多模型网关、外部知识库集成          |          |
-| **多智能体编排**  | LangGraph                                 | 状态驱动、有向图编排、可中断可恢复、层级多智能体系统  |          |
-| **结构化输出**    | with_structured_output()                  | Pydantic Model → JSON Schema自动转换                  |          |
-| **向量数据库**    | Milvus / Qdrant                           | 原生支持元数据过滤                                    |          |
-| **地图引擎**      | Mapbox GL JS                              | 高性能自定义图层，支持3D渲染                          |          |
-| **图表渲染**      | ECharts 5                                 | 热力图、散点矩阵原生支持                              |          |
-| **语音识别(ASR)** | 讯飞/阿里云实时语音识别                   | 企业级准确率，支持自定义热词                          |          |
-| **科学计算**      | scipy + pandas                            | 相关系数计算、时间序列对齐                            |          |
-| **后端框架**      | Python 3.11+ / FastAPI                    | 统一API风格，高性能                                   |          |
-| **异步任务**      | Celery + Redis                            | 耗时计算任务异步化                                    |          |
-| **实时推送**      | WebSocket                                 | 分析结果主动推送到前端                                |          |
-| **可观测**        | Langfuse（自托管）+ Prometheus/Grafana    | 全链路追踪 + 基础设施监控                             |          |
-| **评测**          | Braintrust（混合部署）+ Ragas + Promptfoo | 数据平面在客户侧                                      |          |
-| **容器编排**      | Kubernetes + Helm Charts                  | 生产级部署                                            |          |
+| 路径 | 门户 | 说明 |
+| :--- | :--- | :--- |
+| `/` | Dify 工作台 | 可视化工作流编排（独立 Dify 实例，172.18.0.12） |
+| `/portal/` | 基础 RAG 门户 | 登录 / 文档上传 / 对话 / 驾驶舱 Dashboard |
+| `/hub/` | 七步法统一入口 | 7 步法导航页 + 跨模块跳转 |
+| `/intel/` | 情报收集增幅器 | 外部情报采集、趋势、报告、预警（GEO 视角） |
+| `/hr/` | HR 智能评估 | 员工画像、人岗匹配、风险评估、裁员模拟器（含防呆 5 步） |
+| `/pricing/` | 动态定价引擎 | 需求预测、弹性估计、竞品追踪、What-if 模拟、RL 定价 |
+| `/marketing/` | GEO 营销投放 | 可见度追踪、内容 E-E-A-T 优化、广告多变体、ROI 预测 |
+| `/obs/` | 全系统运行监测 | 7 个观测子模块的面板与审计/告警 |
+| `/training/` | 培训与认证 | 三级认证体系（操作员/分析师/架构师）门户 |
 
+> 自签名证书，浏览器访问时需手动信任。各门户 base path 与路径一致（如 `/obs/`、`/hr/`）。
 
-## 三、完整模块列表（11大模块）
+---
 
-| 模块编号 | 模块名称                   | 部署形态    | 核心功能                                                     | 人天    |
-| :------- | :------------------------- | :---------- | :----------------------------------------------------------- | :------ |
-| **A**    | 智能路由网关               | 云端SaaS    | 多模型路由、租户管理、灰度发布、成本统计                     | 37      |
-| **B**    | RAGFlow企业RAG引擎         | 本地部署    | 多模态文档解析、混合检索、GraphRAG、权限元数据注入           | 53      |
-| **C**    | Dify应用编排层             | 本地部署    | 可视化工作流、多模型网关、LangGraph集成                      | 20      |
-| **D**    | 统一消息枢纽               | 本地部署    | 多IM平台接入、会话管理、消息路由                             | 27      |
-| **E**    | 桌面AI助手                 | 本地安装    | 全局快捷键、文本捕获、AI回填                                 | 25      |
-| **F**    | 数据情报服务               | 云端SaaS    | 全球数据采集、自动分析、报告推送                             | 39      |
-| **G**    | 智能分析层                 | 本地/云混合 | NL2SQL、交互式Dashboard、下钻关联分析                        | 26      |
-| **H**    | 全栈治理与可观测性         | 全平台贯穿  | 统一认证/权限/监控/审计/追踪/防呆组件                        | 40      |
-| **I**    | 实施工具包                 | —           | 一键部署、配置模板、迁移工具                                 | 16      |
-| **J**    | 人力资源智能决策层         | 本地部署    | 员工画像、人岗匹配、风险评估、裁员评估                       | 51      |
-| **K**    | LangGraph多智能体编排层    | 本地部署    | Supervisor-Worker模式、结构化指令路由、冲突裁决              | 35      |
-| **L**    | **地图AI分析模块（新增）** | 本地/云混合 | 实体标记、分析收纳盒、语音输入、相关性分析、可视化输出、地图联动 | **42**  |
-| **合计** |                            |             |                                                              | **411** |
-
-> **411人天 ≈ 20.5人月**（按每月22个工作日），建议预留30%缓冲 → **约27人月**。
-
-
-## 四、地图AI分析模块（模块L）详细设计
-
-### 4.1 模块定位
-
-在既有地图可视化看板基础上，构建 **“空间智能分析工作台”** 。用户通过**语音/文字输入 + 地图实体标记**的自然交互方式，发起跨区域、跨维度的复杂相关性分析，并将分析结果以可视化图表与地图联动的形式呈现。
-
-### 4.2 核心能力
-
-- 地图/弹窗/下钻信息框中的**实体快速标记**（点击“+”加入分析）
-- 全局悬浮的 **“分析收纳盒”** （聚合已标记实体）
-- **语音输入**（ASR）+ 文字输入的混合分析框
-- 多实体**相关性分析**（数值计算 + AI解读）
-- 分析结果的**可视化输出**（热力图/散点矩阵/地图高亮联动）
-
-### 4.3 技术架构
+## 三、架构总览
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         前端应用层（React/Vue）                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
-│  │  主地图窗口  │  │ 监控弹窗/   │  │ 下钻信息框  │  │  分析结果    │ │
-│  │  (Mapbox)   │  │ 侧边栏     │  │ (详情面板)  │  │  渲染区     │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘ │
-│         └────────────────┼────────────────┘                │          │
-│                          │ 点击"+"按钮写入                  │          │
-│                          ▼                                 │          │
-│  ┌─────────────────────────────────────────────────────┐   │          │
-│  │         全局状态管理 (Redux/Pinia)                  │   │          │
-│  │    AnalysisContext: { markedEntities: [] }          │   │          │
-│  │    + LocalStorage持久化                            │   │          │
-│  └─────────────────────────────────────────────────────┘   │          │
-│                          │                                 │          │
-│                          ▼                                 │          │
-│  ┌─────────────────────────────────────────────────────┐   │          │
-│  │      全局悬浮组件："分析收纳盒"                     │   │          │
-│  │  [实体1] [实体2] [实体3]  [+ 语音/文字输入框]      │   │          │
-│  └─────────────────────────────────────────────────────┘   │          │
-└──────────────────────────┼─────────────────────────────────────────────┘
-                           │ HTTP/WebSocket
-                           ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          后端服务层 (FastAPI)                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│  API: /api/analysis/correlate                                         │
-│                           │                                           │
-│                           ▼                                           │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │              LangGraph 多智能体编排层（复用模块K）             │   │
-│  │  ┌──────────────────────────────────────────────────────┐      │   │
-│  │  │  Main Agent (Supervisor) - 意图解析与任务拆解        │      │   │
-│  │  └──────────────────────────────────────────────────────┘      │   │
-│  │                           │                                      │   │
-│  │          ┌────────────────┼────────────────┐                    │   │
-│  │          ▼                ▼                ▼                    │   │
-│  │   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐             │   │
-│  │   │ ERP子Agent  │ │  IoT子Agent │ │ TMS子Agent  │             │   │
-│  │   │ (能耗数据)  │ │ (产量数据)  │ │ (销售数据)  │             │   │
-│  │   └─────────────┘ └─────────────┘ └─────────────┘             │   │
-│  └───────────────────────────┼──────────────────────────────────────┘   │
-│                              │                                          │
-│                              ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  相关性计算引擎 (Correlation Engine)                           │   │
-│  │  • scipy.stats.pearsonr + pandas.DataFrame.corr               │   │
-│  │  • 时间序列对齐: 重采样至统一时间粒度                          │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                              │                                          │
-│                              ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  AI解读节点 (LLM Interpreter)                                  │   │
-│  │  • 输入: 相关性矩阵 + 实体上下文                               │   │
-│  │  • 输出: 自然语言解读 + 数据来源标注                          │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
-                           │ WebSocket推送
-                           ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      可视化渲染层（前端）                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                   │
-│  │ 相关性热力图 │  │ 散点矩阵图  │  │ 地图联动高亮 │                   │
-│  │ (ECharts)   │  │ (ECharts)   │  │ (Mapbox)    │                   │
-│  └─────────────┘  └─────────────┘  └─────────────┘                   │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  AI解读文本输出 + 数据来源标注（合规要求）                     │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+                          ┌─────────────────────────────────────────────┐
+   浏览器 / 客户端  ─────▶ │  nginx (8443)                                │
+                          │   /fde-api/ ─▶ backend:8000                  │
+                          │   /obs/ /portal/ /hr/ ... ─▶ static dist     │
+                          │   /         ─▶ Dify (172.18.0.12)            │
+                          └───────────────────┬─────────────────────────┘
+                                              │
+                          ┌───────────────────▼─────────────────────────┐
+                          │  FastAPI 网关 (router_agent)                 │
+                          │   • 多模型适配器 (4) + 故障切换              │
+                          │   • API Key 鉴权 + 限速 (auth_middleware)    │
+                          │   • 指标/链路中间件 (OpenTelemetry)          │
+                          └───────────────────┬─────────────────────────┘
+                                              │
+                          ┌───────────────────▼─────────────────────────┐
+                          │  LangGraph Orchestrator (Supervisor-Worker)  │
+                          │   Main Agent 只规划 → 结构化指令 → 后端执行   │
+                          │   10 个 Worker：rag/hr/data/analysis/router/ │
+                          │   governance/compliance/business/im/map      │
+                          └───┬──────┬──────┬──────┬──────┬──────┬───────┘
+                              │      │      │      │      │      │
+                  ┌───────────┘      │      │      │      │      └───────────┐
+                  ▼                  ▼      ▼      ▼      ▼                  ▼
+            Qdrant(向量)      PostgreSQL/   Dify    外部API          观测环缓冲        桌面/IM
+            +SQLite(元数据)    SQLite      编排    (百度/企微…)     (trace/audit/    适配器
+                                                  (LLM网关)          token 环形缓冲)
 ```
 
-### 4.4 核心数据结构
+**关键设计原则**
 
-```typescript
-interface MarkedEntity {
-  id: string;                // 唯一标识
-  name: string;              // 显示名称（如"A厂房"）
-  type: 'plant' | 'region' | 'sales_area' | 'device';
-  category: 'energy' | 'output' | 'sales' | 'production';
-  coordinates?: [number, number];  // 地理坐标
-  context: {
-    data_source: string;     // 数据来源（ERP/IoT/TMS）
-    time_range?: string;     // 当前查看的时间范围
-    current_value?: number;  // 当前数值（如有）
-  };
-  marked_at: timestamp;
-}
+- **LLM 只规划，后端执行**：Main Agent 输出结构化指令（Pydantic），真实工具调用由后端确定性代码执行，杜绝提示词注入导致的越权。
+- **权限硬过滤**：权限控制在后端实现，不经过 LLM。
+- **防呆设计**：删除/重建索引/裁员提交/危险 SQL 等高风险操作均含确认、影响范围预览、回退机制。
+- **本地优先**：PII 与私域数据组件本地部署；评测数据平面在客户侧。
+
+---
+
+## 四、智能体清单（16 个）
+
+| 智能体 | 职责 | 关键能力 |
+| :--- | :--- | :--- |
+| `router_agent` | FastAPI 网关 | 4 模型适配器、路由策略、故障切换、防呆中间件 |
+| `orchestrator` | LangGraph Supervisor | 任务拆解、Worker 调度、冲突裁决、结构化指令路由 |
+| `rag_agent` | 企业 RAG 引擎 | Qdrant + HybridSearch + Reranker + QueryRewrite + ONNX 嵌入 |
+| `ingestion_agent` | 文档入湖 | 多格式解析、三层归一化、parent-child chunking、入库/查询 |
+| `analysis_agent` | 智能分析层 | NL2SQL 引擎（规则 + LLM fallback + MockExecutor）、Dashboard |
+| `hr_agent` | HR 智能决策 | 员工画像、胜任力模型、人岗匹配、风险评估、裁员模拟、防呆 5 步 |
+| `data_agent` | 数据情报服务 | 多源采集器（RSS/HTTP/API）、清洗、GEO Guard、推送 |
+| `pricing_agent` | 动态定价引擎 | 需求预测、弹性估计、竞品追踪、规则/RL 优化、What-if、报告（numpy-only） |
+| `marketing_agent` | GEO 营销投放 | 可见度追踪、内容 E-E-A-T 优化、广告多变体/A-B、ROI 预测（numpy-only） |
+| `map_agent` | 地图 AI 分析 | 地图分析 API、解释器、langgraph 节点、标记 CRUD |
+| `im_agent` | 统一消息枢纽 | IMWorker + 企微/飞书/钉钉适配器 Stub |
+| `client_agent` | 桌面 AI 助手 | Desktop Client SDK（16 models、DesktopAuthManager） |
+| `dify_bridge` | Dify 集成 | DifyBridge + `/dify/*` 路由 + OpenAPI spec（11 个 x-dify 工具） |
+| `compliance_agent` | 合规 Worker | 合规检查节点 |
+| `business_agent` | 业务系统 Worker | ERP/WMS/TMS 等业务系统对接 |
+| `governance_agent` | 全栈治理 | 认证/权限/监控/审计/防呆组件 |
+| `observability_agent` | 运行监测 | Overview/Token Router/API 管理/服务健康/RAG 检视/Trace/审计告警 |
+
+---
+
+## 五、前端门户清单（9 个）
+
+| 门户 | 技术 | base path | 视图 |
+| :--- | :--- | :--- | :--- |
+| `portal` | Vue3+Vite+ECharts | `/portal/` | Login / Upload / Chat / Dashboard |
+| `map-ai` | Vue3+MapboxGL+Tiptap+Pinia | — | 15 组件（已冻结，tag `archive/map-ai-stable`） |
+| `intelligence-portal` | Vue3+Vite+ECharts（暗色霓虹） | `/intel/` | Dashboard / Source / Trend / Report / Alert |
+| `hr-portal` | Vue3+Vite+ECharts（专业亮色） | `/hr/` | Dashboard / EmployeeList / EmployeeDetail / RedundancySimulator |
+| `pricing-portal` | Vue3+Vite+ECharts（金融暗色） | `/pricing/` | Dashboard / Simulator / Strategy / Elasticity / Competitors |
+| `marketing-portal` | Vue3+Vite+ECharts（营销科技暗色） | `/marketing/` | GEO Dashboard / Content Studio / Ad Manager / ROI Dashboard |
+| `hub` | Vue3+Vite（纯静态） | `/hub/` | 七步法导航页（7 卡 + Dify 外链） |
+| `training-portal` | Vue3+Vite（纯静态） | `/training/` | 培养目标 / 课程模块 / 认证路径 / 资料中心 |
+| `observability-portal` | Vue3+Vite+ECharts（暗色） | `/obs/` | Overview / TokenRouter / ApiManagement / ServiceHealth / RagInspector / TraceViewer / AuditTrail+Alerts |
+
+> 统一约定：所有门户 ECharts 固定 **5.6.0**；API `BASE` 指向 `/fde-api/api/<module>`。
+
+---
+
+## 六、V5 企业落地七步法
+
+按「基础 → 交付 → 培训 → 情报 → 营销 → 裁员 → 定价」顺序交付，门户经 `/hub/` 统一串联：
+
+1. **① 基础（信息化基建）**：V4 成果 —— 网关、RAG、LangGraph、Dify、门户。
+2. **② 交付（驾驶舱）**：`/portal/dashboard` 统计文档量、切片数、类型分布、入库趋势。
+3. **③ 培训（信息化培训班 + 考证）**：`/training/` 轻量门户 + `docs/training/manual.md`（三级手册）+ `docs/training/exam-bank.md`（17 题题库）。*视频课程待录制。*
+4. **④ 情报（外部情报收集增幅器）**：`/intel/` 5 视图 + `data_agent` 采集/清洗/推送。
+5. **⑤ 营销（GEO 投放）**：`/marketing/` + `marketing_agent`（numpy-only），可见度/内容/广告/ROI。
+6. **⑥ 裁员（HR 模块 Web）**：`/hr/` + `hr_agent`，含裁员模拟器与防呆 5 步。
+7. **⑦ 定价（动态定价引擎）**：`/pricing/` + `pricing_agent`（numpy-only，RL 策略梯度），需求/弹性/竞品/模拟。
+
+> Dify 集成：`docs/fde-dify-openapi.yaml` v5.0.0 含 **11 个 x-dify 工具**；`docs/dify-workflows/` 提供 5 个可导入 DSL。
+
+---
+
+## 七、全系统运行监测平台（Observability）
+
+对标业界三层架构 **Langfuse（LLM 追踪）+ Portkey/LiteLLM（网关成本）+ Datrafana（基础设施 APM）**，以 OpenTelemetry 为粘合层；落地五大企业模式：**Cost Canary / Drift Detector / Compliance Checkpoint / Human Escalation Tracker / Multi-Agent Debugger**。
+
+**7 个子模块**
+
+| 子模块 | 能力 |
+| :--- | :--- |
+| Overview Dashboard | 平台总览指标聚合 |
+| Token Router Monitor | 用量/成本/路由分布、Cost Canary 日预算（80% 预警 / 100% 超限 + 模型降级） |
+| API Management | API Key CRUD（SHA-256）+ token-bucket 限速 + 外部 API 注册表（9 个） |
+| Service Health | 三级探活 `/healthz` `/readyz` `/livez` + 组件健康 |
+| RAG Inspector | 切片浏览/向量预览/重索引/删除/检索回放（DB 不可用时优雅降级） |
+| Trace Viewer | span 瀑布图 + P50/P95/P99 + error_rate + hot-paths |
+| Audit Trail + Alerting | 审计日志（CSV 导出）+ 4 默认告警规则 + 漂移检测（滚动基线 ≥50% 变化标记） |
+
+**部署要点**
+
+- 单实例采用 **内存环形缓冲**（trace 20k / audit 50k / token 50k），避免引入 Alembic 迁移；如需重启后历史可追溯可升级为 SQLite/Postgres 持久化。
+- 测试：observability 65 + router 集成覆盖，共 **71 个**专项测试，ruff 零告警。
+- 设计文档：`docs/v5-observability-platform-design.md`、`docs/v5-observability-dev-plan.md`（5 Phase × 27 Task）。
+
+---
+
+## 八、技术栈（实际落地）
+
+| 层级 | 组件 | 选型 / 说明 |
+| :--- | :--- | :--- |
+| 后端框架 | Python 3.11+ / FastAPI | 统一 API 风格，异步 |
+| 多智能体编排 | LangGraph | Supervisor-Worker，结构化指令路由 |
+| RAG 向量库 | Qdrant | 元数据过滤；Docker 容器 :6333 |
+| RAG 嵌入 | BGE ONNX INT8（24MB） | `FDE_EMBEDDING_BACKEND=onnx`，`BAAI/bge-small-zh-v1.5` |
+| 元数据底座 | PostgreSQL / SQLite 兜底 | 服务器未装 Postgres，MVS 用 SQLite（`DATABASE_URL` 注入） |
+| 应用编排 | Dify | 独立实例，注册为 Custom Tool（`fde_data_tool`） |
+| 前端 | Vue 3 + Vite + ECharts 5.6 | 多主题暗/亮色门户；map-ai 用 Mapbox GL + Tiptap |
+| 科学计算 | numpy-only（pricing/marketing） | 服务器无 pandas/xgboost/prophet；RL 用策略梯度/PPO 风格 |
+| 认证 | bcrypt（4.0–5.0） | `FDE_ENABLE_AUTH` 开关（默认关闭） |
+| 观测 | 内存环缓冲 + Prometheus/Grafana | docker-compose 可选启用 |
+| 部署 | systemd + nginx + Docker | 单台 Oracle ARM（2C/11G/96G），非 K8s |
+| 代码质量 | ruff → black → mypy(strict) | Conventional Commits；pytest + coverage |
+
+> **与原 v2.0 规划的主要偏差**（见附录）：RAGFlow → Qdrant + 自研解析/检索；Kubernetes → 单主机 systemd；pandas/scipy → 部分 agent numpy-only。偏差源于服务器资源约束与交付节奏，功能等价或更强。
+
+---
+
+## 九、本地开发
+
+```bash
+# 1. 后端（Python 3.11+）
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env          # 按需填写模型/百度地图 AK/数据库等
+pytest                         # 全量 1227 个测试
+
+# 2. 前端（以某个门户为例，Node 20+）
+cd frontend/observability-portal
+npm install && npm run dev     # 默认 http://localhost:5173，base /obs/
+
+# 3. 启动后端
+uvicorn router_agent.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 4.5 语音输入与代词消解
+关键环境变量：`.env.example` 含 `FDE_RAG_EMBEDING_MODEL`（注意拼写，历史遗留）、`FDE_EMBEDDING_BACKEND`、`BAIDU_SERVER_AK` / `VITE_BAIDU_AK`、`FDE_ENABLE_AUTH`、`DATABASE_URL`。
 
-**ASR集成**：采用讯飞/阿里云实时语音识别，支持自定义热词（预置厂房名、产品名）。
+---
 
-**代词指代消解逻辑**（⚠️ 关键）：
-```
-用户语音: "分析它的产量变化"
-          ↓
-后端解析时检测到代词"它"
-          ↓
-检索 AnalysisContext 中最近一次标记的实体
-          ↓
-自动替换为: "分析C产地的产量变化"
-```
+## 十、部署（生产）
 
-### 4.6 子任务清单（42人天）
-
-| 子任务   | 具体内容                                               | 通用化/防呆设计              | 人天   |
-| :------- | :----------------------------------------------------- | :--------------------------- | :----- |
-| L-1      | 全局状态管理（Redux/Pinia Store + LocalStorage持久化） | 实体增删改查、持久化         | 2      |
-| L-2      | 地图Marker增加"+"按钮                                  | 点击写入Store，防重复标记    | 3      |
-| L-3      | 监控弹窗/侧边栏增加"+"按钮                             | 弹窗内实体可标记             | 2      |
-| L-4      | 下钻信息框增加"+"按钮                                  | 下钻层级内实体可标记         | 2      |
-| L-5      | 分析收纳盒组件（全局悬浮、拖拽、最小化）               | 显示实体卡片、移除、清空     | 5      |
-| L-6      | 收纳盒内实体卡片拖拽排序                               | react-dnd集成                | 2      |
-| L-7      | ASR SDK集成（讯飞/阿里云）                             | 自定义热词配置               | 2      |
-| L-8      | 语音+文字混合输入框                                    | 语音识别自动填充             | 2      |
-| L-9      | 代词指代消解前端提示                                   | 显示"已选中{实体名}"         | 1      |
-| L-10     | 分析提交API + 加载状态                                 | 防重复提交                   | 2      |
-| L-11     | 后端分析API设计（FastAPI路由）                         | POST /api/analysis/correlate | 2      |
-| L-12     | LangGraph节点扩展：实体数据获取                        | 从各数据源拉取时间序列       | 3      |
-| L-13     | LangGraph节点扩展：相关性计算                          | scipy/pandas计算             | 3      |
-| L-14     | LangGraph节点扩展：AI解读                              | LLM生成自然语言解读          | 2      |
-| L-15     | 异步任务队列（Celery）                                 | 耗时计算异步化               | 2      |
-| L-16     | WebSocket推送                                          | 分析结果主动推送前端         | 2      |
-| L-17     | 相关性热力图组件（ECharts）                            | 点击格子触发地图联动         | 3      |
-| L-18     | 散点矩阵图组件（ECharts）                              | 展示两两实体关系             | 2      |
-| L-19     | 地图联动高亮（Mapbox flyTo + 图层高亮）                | 点击图表联动地图             | 2      |
-| L-20     | 分析结果看板整合                                       | 图表+AI解读整合展示          | 3      |
-| L-21     | 防呆设计：空实体校验、语音识别失败降级、权限校验       | 统一防呆组件                 | 3      |
-| **小计** |                                                        |                              | **42** |
-
-
-## 五、LangGraph多智能体架构（模块K）详细设计
-
-### 5.1 Supervisor-Worker模式
-
-**⚠️ 核心原则：Main Agent只负责"规划"，真正的工具调用由后端代码执行，LLM不直接调用任何API。**
+部署拓扑（宿主机 systemd nginx，端口 8443）：
 
 ```
-用户请求
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Main Agent (Supervisor)                     │
-│  职责：                                                        │
-│  1. 理解用户请求，拆解为子任务                                  │
-│  2. 为每个子任务分配合适的Worker Agent                         │
-│  3. 输出结构化指令（JSON格式，由后端代码解析执行）              │
-│  4. 检测潜在数据冲突，声明裁决规则                             │
-└─────────────────────────────────────────────────────────────────┘
-    │  结构化指令路由（后端代码解析执行）
-    ├──────────────┬──────────────┬──────────────┬──────────────┐
-    ▼              ▼              ▼              ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│合规分析  │ │业务系统  │ │另类数据  │ │人力资源  │ │地图分析  │
-│Worker    │ │Worker    │ │Worker    │ │Worker    │ │Worker    │
-└──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+/            → Dify (172.18.0.12)
+/fde-api/     → proxy_pass 127.0.0.1:8000   (FastAPI 后端)
+/portal/ /obs/ /hr/ /pricing/ /marketing/ /intel/ /hub/ /training/
+             → alias 各 frontend/dist (SPA fallback → index.html)
 ```
 
-### 5.2 全局状态定义
+标准发布流程：
 
-```python
-from langgraph.graph import StateGraph
-from typing import TypedDict, List, Optional
+```bash
+# 后端
+git push origin main
+ssh -i ~/ssh/arm.key ubuntu@217.142.246.70 \
+  "cd ~/fde-ai-platform && git pull && sudo systemctl restart fde-backend"
 
-class EnterpriseAgentState(TypedDict):
-    """LangGraph全局状态"""
-    messages: List[BaseMessage]          # 对话历史
-    user_id: str                         # 用户身份
-    user_role: str                       # 用户角色
-    user_dept: str                       # 用户部门
-    current_step: str                    # 当前步骤
-    task_plan: Optional[dict]            # 结构化任务指令
-    sub_agent_results: Optional[dict]    # 各子Agent返回结果
-    conflict_resolved: Optional[bool]    # 冲突是否已裁决
-    trace_id: str                        # 全链路追踪ID
-    final_answer: Optional[str]          # 最终答案
+# 前端（示例：observability-portal）
+cd frontend/observability-portal && npm run build
+tar czf obs.tar.gz -C dist .
+scp -i ~/ssh/arm.key obs.tar.gz ubuntu@217.142.246.70:~/fde-ai-platform/frontend/observability-portal/
+ssh -i ~/ssh/arm.key ubuntu@217.142.246.70 \
+  "cd ~/fde-ai-platform/frontend/observability-portal && rm -rf dist && mkdir dist && tar xzf obs.tar.gz -C dist && sudo nginx -t && sudo systemctl reload nginx"
 ```
 
-### 5.3 Main Agent结构化指令格式
+> 服务单元：`fde-backend.service`（WorkingDirectory `/home/ubuntu/fde-ai-platform`，venv `/home/ubuntu/fde-ai-platform/venv`）。Prometheus 告警规则见 `deploy/prometheus/alerts.yml`。
 
-```python
-from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+---
 
-class SubAgentTask(BaseModel):
-    agent_type: Literal[
-        "compliance", "erp", "wms", "tms", "iot", 
-        "remote_sensing", "hr_profile", "hr_match", "hr_risk",
-        "map_correlation"  # 新增：地图分析
-    ]
-    action: str = Field(description="要执行的具体操作")
-    parameters: dict = Field(description="操作参数")
-    priority: int = Field(default=1)
+## 十一、测试与质量门禁
 
-class StructuredInstruction(BaseModel):
-    intent: str = Field(description="用户意图分类")
-    requires_parallel: bool = Field(default=False)
-    tasks: List[SubAgentTask]
-    conflict_rules: Optional[List[str]] = None
-    fallback_action: Optional[str] = "clarify"
-```
+- **全量测试**：`pytest` 收集 **1227 个**用例（含 observability 专项 71 个）。
+- **质量门禁**：`ruff check`（零告警）→ `black` → `mypy --strict` → `pytest` + coverage。
+- **CI/CD**：`.github/` 流水线 + Makefile 封装常用命令（见 `Makefile`）。
+- **评测**：合规场景强制溯源引用（相似度低于阈值直接拒答）；结构化指令解析成功率 100%。
 
+---
 
-## 六、完整子Agent职责矩阵（12个）
+## 十二、文档索引
 
-| 子Agent              | 简称   | 负责模块                           | 核心任务数 | 主要产出                                   |
-| :------------------- | :----- | :--------------------------------- | :--------- | :----------------------------------------- |
-| **Orchestrator**     | 协调者 | 任务拆解、调度、集成测试、部署工具 | 跨全部     | 集成测试报告、部署工具、文档               |
-| **Router Agent**     | 路由师 | 智能路由网关（A）                  | 4          | 统一API网关、多模型适配                    |
-| **RAG Agent**        | 知识官 | RAGFlow引擎（B）                   | 10         | RAGFlow部署、文档解析、权限元数据          |
-| **Dify Agent**       | 编排师 | Dify应用编排（C）                  | 6          | Dify部署、工作流编排                       |
-| **IM Agent**         | 接线员 | 统一消息枢纽（D）                  | 5          | 企微/飞书/钉钉机器人                       |
-| **Client Agent**     | 手艺人 | 桌面AI助手（E）                    | 4          | Tauri客户端、快捷键、文本捕获              |
-| **Data Agent**       | 情报官 | 数据情报服务（F）                  | 6          | 全球数据采集、报告推送                     |
-| **Analysis Agent**   | 分析师 | 智能分析层（G）                    | 5          | NL2SQL、Dashboard                          |
-| **Governance Agent** | 管家   | 全栈治理（H）                      | 9          | 认证权限、监控审计、防呆组件               |
-| **HR Agent**         | 人力官 | 人力资源决策层（J）                | 10         | 画像引擎、人岗匹配、裁员评估               |
-| **LangGraph Agent**  | 指挥家 | LangGraph编排层（K）               | 10         | Supervisor-Worker模式                      |
-| **Map Agent**        | 地图师 | 地图AI分析模块（L）                | 12         | 实体标记、分析收纳盒、语音输入、相关性分析 |
+| 文档 | 内容 |
+| :--- | :--- |
+| `docs/v5-enterprise-delivery-plan.md` | V5 七步法交付计划 |
+| `docs/v5-audit-report.md` | V5 商业交付审计（达成度 ~95%） |
+| `docs/v5-observability-platform-design.md` | 运行监测平台设计（三层架构 + 企业模式） |
+| `docs/v5-observability-dev-plan.md` | 运行监测平台开发计划（5 Phase × 27 Task） |
+| `docs/v5-rag-observability-research.md` | RAG 切片可观测性调研（对标 FastGPT） |
+| `docs/fde-dify-openapi.yaml` | Dify 集成 OpenAPI（v5.0.0，11 个工具） |
+| `docs/dify-workflows/` | 5 个可导入 DSL |
+| `docs/training/manual.md` `docs/training/exam-bank.md` | 培训手册 + 题库 |
+| `docs/retrospective-v4.md` | V4 复盘报告 |
+| `AGENTS.md` | 智能体协作约定 |
 
+---
 
-## 七、完整里程碑与任务时序（4个阶段）
+## 附录：原始 v2.0 规划背景（历史参考）
 
-| 阶段                   | 时间    | 核心任务                                                     | 涉及Agent                                      | 交付物                                     |
-| :--------------------- | :------ | :----------------------------------------------------------- | :--------------------------------------------- | :----------------------------------------- |
-| **M1: 地基**           | 第1-3月 | 基础设施 + RAGFlow + Dify + LangGraph框架                    | Orchestrator, RAG, Dify, LangGraph, Governance | 网关 + RAG底座 + 多智能体框架              |
-| **M2: 触点+智能体**    | 第4-5月 | IM集成 + 桌面客户端 + 合规Agent + 业务系统Agent + 权限硬过滤 | IM, Client, LangGraph, Governance              | 三端机器人 + 桌面客户端 + 智能体           |
-| **M3: 大脑+数据+地图** | 第6-7月 | 数据分析 + 数据情报 + 人力资源核心 + **地图AI分析**          | Analysis, Data, HR, **Map**, Governance        | Dashboard + 数据情报 + 画像 + **地图分析** |
-| **M4: 交付**           | 第8-9月 | 裁员评估 + 防呆组件 + 全景看板 + 实施工具包                  | Orchestrator, HR, Governance                   | 裁员评估 + 完整交付                        |
+> 以下为项目早期（v2.0）的总体规划，作为历史背景保留。**部分内容已被实际落地方案替代**（见第八节偏差说明），以本文前述「现状 / 架构 / 智能体 / 技术栈」为准。
 
+### A. 规划模块列表（11 大模块，A–L）
 
-### M1: 地基（第1-3月）
+| 编号 | 模块 | 部署形态 | 规划人天 |
+| :--- | :--- | :--- | :--- |
+| A | 智能路由网关 | 云端 SaaS | 37 |
+| B | 企业 RAG 引擎 | 本地部署 | 53 |
+| C | Dify 应用编排层 | 本地部署 | 20 |
+| D | 统一消息枢纽 | 本地部署 | 27 |
+| E | 桌面 AI 助手 | 本地安装 | 25 |
+| F | 数据情报服务 | 云端 SaaS | 39 |
+| G | 智能分析层 | 本地/云混合 | 26 |
+| H | 全栈治理与可观测性 | 全平台贯穿 | 40 |
+| I | 实施工具包 | — | 16 |
+| J | 人力资源智能决策层 | 本地部署 | 51 |
+| K | LangGraph 多智能体编排层 | 本地部署 | 35 |
+| L | 地图 AI 分析模块 | 本地/云混合 | 42 |
+| | **合计** | | **411（约 20.5 人月，含缓冲 ~27 人月）** |
 
-| 任务ID | 所属Agent        | 任务内容                                                     | 交付物        | 人天 |
-| :----- | :--------------- | :----------------------------------------------------------- | :------------ | :--- |
-| M1-T1  | orchestrator     | 初始化Monorepo结构，配置CI/CD                                | 项目骨架      | 3    |
-| M1-T2  | governance-agent | 部署可观测底座（Prometheus + Grafana + Loki + Langfuse）     | 监控+追踪     | 6    |
-| M1-T3  | router-agent     | 统一API网关 + 多模型适配器 + 路由策略 + 故障切换             | 网关+路由     | 16   |
-| M1-T4  | rag-agent        | RAGFlow部署 + 企业连接器 + 文档质量分级 + 权限元数据注入 + 混合检索 | RAG引擎       | 26   |
-| M1-T5  | dify-agent       | Dify部署 + RAGFlow外部知识库接入                             | Dify底座      | 5    |
-| M1-T6  | langgraph-agent  | LangGraph框架 + 全局状态 + Main Agent + Supervisor提示词     | LangGraph框架 | 13   |
-| M1-T7  | governance-agent | 防呆组件基础设计                                             | 防呆设计文档  | 3    |
-| M1-T8  | orchestrator     | 端到端集成测试                                               | 测试报告      | 3    |
+### B. 子 Agent 职责矩阵（规划版，12 个）
 
-**M1小计：75人天**
+| 子 Agent | 负责模块 | 核心任务数 |
+| :--- | :--- | :--- |
+| Orchestrator | 任务拆解/调度/集成测试/部署 | 跨全部 |
+| Router Agent | 智能路由网关（A） | 4 |
+| RAG Agent | RAG 引擎（B） | 10 |
+| Dify Agent | 应用编排（C） | 6 |
+| IM Agent | 统一消息枢纽（D） | 5 |
+| Client Agent | 桌面 AI 助手（E） | 4 |
+| Data Agent | 数据情报（F） | 6 |
+| Analysis Agent | 智能分析（G） | 5 |
+| Governance Agent | 全栈治理（H） | 9 |
+| HR Agent | 人力资源决策（J） | 10 |
+| LangGraph Agent | 编排层（K） | 10 |
+| Map Agent | 地图 AI 分析（L） | 12 |
 
+> 实际落地后新增 `ingestion_agent`、`pricing_agent`、`marketing_agent`、`observability_agent`、`dify_bridge`、`compliance_agent`、`business_agent`，共 **16 个**智能体。
 
-### M2: 触点+智能体（第4-5月）
+### C. 里程碑（规划版，4 阶段 / 9 个月）
 
-| 任务ID | 所属Agent        | 任务内容                                       | 交付物     | 人天 |
-| :----- | :--------------- | :--------------------------------------------- | :--------- | :--- |
-| M2-T1  | governance-agent | 统一身份认证 + 细粒度权限引擎（后端硬过滤）    | 认证+权限  | 8    |
-| M2-T2  | rag-agent        | 权限过滤检索中间件 + 决策链日志存储            | 权限检索   | 8    |
-| M2-T3  | im-agent         | 统一消息网关 + 企微/飞书/钉钉适配器 + 会话同步 | 三端机器人 | 15   |
-| M2-T4  | client-agent     | Tauri客户端 + 快捷键 + 文本捕获 + AI回填       | 桌面客户端 | 15   |
-| M2-T5  | langgraph-agent  | 路由执行器 + 子Agent Worker（合规/业务系统）   | 子Agent    | 6    |
-| M2-T6  | langgraph-agent  | 冲突裁决节点 + Response Generator节点          | 裁决+响应  | 5    |
-| M2-T7  | dify-agent       | LangGraph封装为Dify工具节点 + 合规Agent工作流  | Dify编排   | 5    |
-| M2-T8  | orchestrator     | 全链路集成测试                                 | 测试报告   | 3    |
+| 阶段 | 时间 | 核心任务 |
+| :--- | :--- | :--- |
+| M1 地基 | 第 1–3 月 | 基础设施 + RAG + Dify + LangGraph 框架 |
+| M2 触点+智能体 | 第 4–5 月 | IM + 桌面客户端 + 合规/业务 Agent + 权限硬过滤 |
+| M3 大脑+数据+地图 | 第 6–7 月 | 数据分析 + 数据情报 + HR 核心 + 地图 AI 分析 |
+| M4 交付 | 第 8–9 月 | 裁员评估 + 防呆组件 + 全景看板 + 实施工具包 |
 
-**M2小计：65人天**
+### D. 防呆机制清单（已落地）
 
+文档删除（数量+影响范围+二次确认）、索引重建（输入 `CONFIRM`+预计耗时）、权限批量修改（diff 预览）、模型切换（影响提示+二次确认）、机器人开关（影响提示）、危险 SQL 拦截（无 WHERE 拦截）、数据导出（超阈值审批）、角色删除（关联用户数+二次确认）、**裁员方案提交（四步：预览→影响评估→合规检查→最终确认）**、结构化指令解析失败（fallback 自动触发）、地图分析提交（空实体校验/语音降级/权限校验）。
 
-### M3: 大脑+数据+地图（第6-7月）
+### E. 核心决策点
 
-| 任务ID | 所属Agent        | 任务内容                                                     | 交付物          | 人天   |
-| :----- | :--------------- | :----------------------------------------------------------- | :-------------- | :----- |
-| M3-T1  | data-agent       | 多源爬虫 + 全球数据采集 + 清洗管道 + 分析流水线              | 数据采集        | 18     |
-| M3-T2  | data-agent       | 报告模板引擎 + 定制化推送服务                                | 报告推送        | 8      |
-| M3-T3  | analysis-agent   | 数据查询网关 + NL2SQL引擎                                    | 数据查询        | 10     |
-| M3-T4  | analysis-agent   | Dashboard + 下钻分析 + 关联分析                              | 可视化看板      | 10     |
-| M3-T5  | hr-agent         | HR系统对接 + 员工画像 + 岗位胜任力模型 + 人岗匹配 + 风险评估 + 冗余分析 | HR引擎          | 33     |
-| M3-T6  | langgraph-agent  | 扩展Worker（另类数据 + HR）                                  | 扩展Worker      | 6      |
-| M3-T7  | governance-agent | 评测体系（Braintrust数据平面 + Golden Dataset + Ragas）      | 评测体系        | 8      |
-| M3-T8  | **map-agent**    | **全局状态管理 + 地图/弹窗/下钻"+"按钮 + UI反馈**            | **实体标记**    | **7**  |
-| M3-T9  | **map-agent**    | **分析收纳盒组件 + 拖拽排序 + 语音输入混合框 + 代词提示**    | **收纳盒+语音** | **10** |
-| M3-T10 | **map-agent**    | **后端分析API + LangGraph节点扩展（数据获取+相关性+AI解读）** | **分析引擎**    | **7**  |
-| M3-T11 | **map-agent**    | **异步任务Celery + WebSocket推送 + 防呆设计**                | **异步+推送**   | **7**  |
-| M3-T12 | **map-agent**    | **热力图 + 散点矩阵 + 时间序列 + 地图联动 + 结果看板**       | **可视化输出**  | **11** |
-| M3-T13 | orchestrator     | 端到端集成测试                                               | 测试报告        | 3      |
+| 决策点 | 选择 | 理由 |
+| :--- | :--- | :--- |
+| RAG 底座 | Qdrant + 自研（规划为 RAGFlow） | 解析/检索可控，资源占用低 |
+| 应用编排 | Dify | 可视化工作流、多模型网关 |
+| 多智能体 | LangGraph Supervisor-Worker | 状态驱动、可中断恢复 |
+| 输出控制 | `with_structured_output()` | 格式 100% 可解析 |
+| 工具调用 | 后端代码执行 | LLM 只规划，防幻觉 |
+| 权限控制 | 后端硬过滤 + 元数据注入 | 物理隔离，防注入 |
+| 部署 | 单主机 systemd（规划为 K8s） | 资源约束下的务实选择 |
 
-**M3小计：138人天**（含地图模块42人天）
+### F. 资源汇总（规划版）
 
+开发周期 9 个月（4 里程碑）｜总工作量 ~411 人天（含缓冲 ~535）｜推荐团队 9 人（后端 4 / 前端 3 / 运维 1 / PM 1）｜子 Agent 16 个｜前端门户 9 个｜核心任务 79+ 个。
 
-### M4: 交付（第8-9月）
+---
 
-| 任务ID | 所属Agent        | 任务内容                                | 交付物    | 人天 |
-| :----- | :--------------- | :-------------------------------------- | :-------- | :--- |
-| M4-T1  | hr-agent         | 裁员评估与成本计算 + 合规检查           | 裁员评估  | 8    |
-| M4-T2  | hr-agent         | 组织全景交互看板                        | 全景看板  | 5    |
-| M4-T3  | governance-agent | 审计日志中心 + 成本控制模块             | 审计+成本 | 8    |
-| M4-T4  | governance-agent | 防呆组件库完整实现                      | 防呆组件  | 5    |
-| M4-T5  | orchestrator     | Promptfoo CI/CD + 回归测试流水线        | CI门禁    | 3    |
-| M4-T6  | orchestrator     | Helm Charts + 一键部署脚本 + 配置模板库 | 部署工具  | 10   |
-| M4-T7  | orchestrator     | 健康检查 + 迁移工具                     | 运维工具  | 3    |
-| M4-T8  | orchestrator     | 完整文档编写                            | 文档      | 5    |
-| M4-T9  | orchestrator     | 全量回归测试                            | 测试报告  | 3    |
-| M4-T10 | orchestrator     | 防呆机制全模块验收                      | 验收报告  | 2    |
-
-**M4小计：52人天**
-
-
-## 八、防呆机制完整清单
-
-| 操作环节               | 防呆机制                                  | 触发条件        |
-| :--------------------- | :---------------------------------------- | :-------------- |
-| **文档删除**           | 显示文档数量 + 影响范围 + 二次确认        | 点击删除按钮    |
-| **索引重建**           | 需输入"CONFIRM" + 显示预计耗时            | 触发重建操作    |
-| **权限批量修改**       | diff预览 + 确认应用                       | 批量修改权限    |
-| **模型切换**           | 显示"将影响Y个活跃会话" + 二次确认        | 切换路由策略    |
-| **机器人开关**         | 提示"关闭后将无法接收X个群的消息"         | 关闭机器人      |
-| **危险SQL执行**        | 拦截DELETE/UPDATE无WHERE语句              | SQL执行前校验   |
-| **数据导出**           | 超过阈值需管理员审批                      | 导出数据量>阈值 |
-| **角色删除**           | 显示关联用户数 + 二次确认                 | 删除角色        |
-| **裁员方案提交**       | 四步流程：预览→影响评估→合规检查→最终确认 | 生成裁员方案    |
-| **快捷键冲突**         | 自动检测并提示冲突                        | 设置快捷键时    |
-| **API地址修改**        | 测试连通性后方可保存                      | 修改API配置     |
-| **工作流修改**         | diff预览 + 二次确认                       | 修改Dify工作流  |
-| **结构化指令解析失败** | fallback_action自动触发                   | 解析异常        |
-| **地图分析提交**       | 空实体校验、语音识别失败降级、权限校验    | 点击"分析"按钮  |
-
-
-## 九、关键决策点总结
-
-| 决策点           | 选择                     | 理由                               |
-| :--------------- | :----------------------- | :--------------------------------- |
-| **RAG引擎底座**  | RAGFlow                  | 文档解析业界领先，企业连接器丰富   |
-| **应用编排层**   | Dify                     | 可视化工作流、多模型网关           |
-| **多智能体编排** | LangGraph                | 状态驱动、有向图、层级多智能体系统 |
-| **协作模式**     | Supervisor-Worker        | Main Agent统一调度，Worker专业分工 |
-| **输出控制**     | with_structured_output() | 保证格式100%可被后端解析           |
-| **工具调用**     | 后端代码执行             | LLM只规划，防幻觉                  |
-| **权限控制**     | 后端硬过滤 + 元数据注入  | 物理隔离，防提示词注入             |
-| **地图引擎**     | Mapbox GL JS             | 高性能自定义图层，3D渲染           |
-| **图表渲染**     | ECharts 5                | 热力图/散点矩阵原生支持            |
-| **语音识别**     | 讯飞/阿里云ASR           | 企业级准确率，支持自定义热词       |
-| **相关性计算**   | scipy + pandas           | 科学计算标准库                     |
-
-
-## 十、团队配置
-
-| 角色                 | 人数    | 负责模块                                                     |
-| :------------------- | :------ | :----------------------------------------------------------- |
-| **后端开发（含AI）** | 4人     | RAGFlow/Dify集成、LangGraph多智能体、路由网关、数据管道、HR模块后端、地图分析后端 |
-| **前端/客户端开发**  | 3人     | IM集成、桌面客户端、Dashboard、全景看板、**地图交互（Mapbox）**、**图表渲染（ECharts）**、**语音输入（ASR集成）** |
-| **运维/DevOps**      | 1人     | 基础设施、Kubernetes部署、监控、CI/CD                        |
-| **项目经理**         | 1人     | 需求对接、进度管理、客户沟通                                 |
-| **合计**             | **9人** |                                                              |
-
-
-## 十一、资源汇总
-
-| 维度             | 数据                       |
-| :--------------- | :------------------------- |
-| **开发周期**     | 9个月（4个里程碑）         |
-| **总工作量**     | ~411人天（加缓冲~535人天） |
-| **推荐团队**     | 9人                        |
-| **子Agent数量**  | 12个                       |
-| **模块数量**     | 11个（A-L）                |
-| **核心任务总数** | 79个                       |
-
-
-## 附录A：技术选型版本锁定
-
-| 组件         | 推荐版本          | 备注              |
-| :----------- | :---------------- | :---------------- |
-| RAGFlow      | v0.26.0+          | 新增7大企业连接器 |
-| Dify         | 最新稳定版        | —                 |
-| LangGraph    | langgraph>=0.0.20 | Supervisor模式    |
-| Mapbox GL JS | v3.x              | 地图引擎          |
-| ECharts      | 5.x               | 图表渲染          |
-| Milvus       | 2.3.x+            | 元数据过滤支持    |
-| Kubernetes   | 1.28+             | 生产部署          |
-| Python       | 3.11+             | —                 |
-
-## 附录B：评估指标阈值
-
-| 指标                      | 目标值 | 监控频率 |
-| :------------------------ | :----- | :------- |
-| 检索召回率（Top-10）      | ≥85%   | 每周     |
-| 答案Faithfulness          | ≥0.90  | 每次发版 |
-| 结构化指令解析成功率      | 100%   | 实时     |
-| 查询响应时间（P95）       | ≤5s    | 实时     |
-| 拒答率（合规场景）        | ≥99%   | 每周     |
-| 权限绕过事件数            | 0      | 实时告警 |
-| 语音识别准确率            | ≥95%   | 每周     |
-| 相关性计算响应时间（P95） | ≤3s    | 实时     |
+*最后更新：2026-07-13 — 补齐 V4/V5/Observability 实际交付状态与部署信息。*
