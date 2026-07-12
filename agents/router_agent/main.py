@@ -123,6 +123,16 @@ try:
 except ImportError:
     logger.warning("Ingestion agent unavailable — /ingest endpoints disabled")
 
+# ── Intelligence Router (V5-④ 情报增幅器) ─────────────────────
+
+try:
+    from agents.data_agent.router import router as data_router
+
+    app.include_router(data_router)
+    logger.info("Intelligence router registered at /api/intelligence/*")
+except ImportError:
+    logger.warning("Data agent router unavailable — /api/intelligence endpoints disabled")
+
 # ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
 
 
