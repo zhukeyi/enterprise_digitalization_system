@@ -1,0 +1,53 @@
+# ===================================================================
+# FDE AI Platform — LiteLLM Proxy Configuration (P0-A / L-1)
+# ===================================================================
+# LiteLLM unifies 100+ LLM providers behind one OpenAI-compatible
+# endpoint and provides virtual keys, per-tenant budgets, cost tracking
+# and fallback. FDE's router_agent delegates model execution here.
+#
+# Secrets are injected via environment variables (see docker-compose.yml).
+# Aliases (fde-economy / fde-default / fde-premium / fde-frontier) map to
+# real provider models and are what tenants' virtual keys are scoped to.
+# ===================================================================
+
+general_settings:
+  # Master key for the proxy's own admin API (/key/generate etc.)
+  # Falls back to env LITELLM_MASTER_KEY if unset here.
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Local in-memory store for keys (no Postgres needed on single host).
+  store: "local"
+  # Disable telemetry to keep the deployment self-contained.
+  telemetry: false
+
+litellm_settings:
+  drop_params: true          # drop unsupported params instead of erroring
+  request_timeout: 60
+  # Retry+fallback on provider errors (kept lean; no extra infra).
+  num_retries: 2
+
+model_list:
+  - model_name: fde-economy
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      temperature: 0.3
+
+  - model_name: fde-default
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  - model_name: fde-premium
+    litellm_params:
+      model: zhipu/glm-4-flash
+      api_key: os.environ/GLM_API_KEY
+
+  - model_name: fde-frontier
+    litellm_params:
+      model: qwen/qwen-max
+      api_key: os.environ/QWEN_API_KEY
+
+# Routing fallbacks: if a primary alias errors, try the next.
+router_settings:
+  # (optional) model group fallbacks configured per-call by tenants
+  enable_pre_call_checks: false

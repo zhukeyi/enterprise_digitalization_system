@@ -194,6 +194,16 @@ try:
 except ImportError:
     logger.warning("IM agent router unavailable — /im/webhook endpoints disabled")
 
+# ── Tenant Router (P0-A: multi-tenant gateway) ──────────────────
+
+try:
+    from agents.router_agent.tenant.router import router as tenant_router
+
+    app.include_router(tenant_router)
+    logger.info("Tenant router registered at /api/tenants")
+except ImportError:
+    logger.warning("Tenant router unavailable — /api/tenants disabled")
+
 # ── Observability Router (Phase 1: platform monitoring) ──────────
 
 try:
@@ -300,6 +310,20 @@ model_registry.discover_adapters()
 routing_engine = RoutingEngine()
 fallback_chain = FallbackChain(model_registry)
 
+# ── P0-A: optional LiteLLM adapter (gray rollout) ───────────────
+# Registered ONLY when LITELLM_PROXY_URL is configured; otherwise it stays
+# invisible to /v1/models and the fallback chain, leaving the legacy
+# Mock/Stub adapters as the active path (risk R1 mitigation).
+try:
+    from agents.router_agent.adapters.litellm_adapter import build_litellm_adapter
+
+    _litellm_adapter = build_litellm_adapter()
+    if _litellm_adapter is not None:
+        model_registry.register(_litellm_adapter)
+        logger.info("LiteLLM adapter registered as %s", _litellm_adapter.full_name)
+except Exception as e:  # pragma: no cover - defensive
+    logger.warning("LiteLLM adapter registration skipped: %s", e)
+
 logger.info("Router Agent loaded with %d adapters", len(model_registry.list_models()))
 
 
@@ -338,6 +362,14 @@ async def chat_completions(
     """
     start_time = time.monotonic()
     trace_id = _get_trace_id(request)
+
+    # P0-A: pass the caller's LiteLLM virtual key (if any) to the adapter so
+    # the proxy can enforce that tenant's model allowlist + budget. The
+    # LiteLLMAdapter reads it from request.extra["litellm_key"]; legacy
+    # adapters ignore extra fields.
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        chat_request.extra = {**chat_request.extra, "litellm_key": auth_header[7:].strip()}
 
     # Log incoming request (mask sensitive fields in production)
     logger.info(
