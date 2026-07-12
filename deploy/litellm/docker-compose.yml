@@ -1,14 +1,21 @@
 # ===================================================================
 # FDE AI Platform — LiteLLM Proxy (standalone, P0-A / L-1)
 # ===================================================================
-# Isolated deployment on :4000 with its own bridge network and a 512M
-# memory cap. Low risk to the existing stack; P0-B merges this into the
-# main deploy/docker-compose.prod.yml and wires fde-backend ->
-# LITELLM_PROXY_URL=http://fde-litellm:4000.
+# Deployed on :4000 using host networking so the container can reach
+# the host's PostgreSQL (installed for LiteLLM virtual-key storage) on
+# 127.0.0.1:5432. A 1.5G memory cap avoids the OOM-kill seen at 512M.
+# P0-B merges this into the main deploy/docker-compose.prod.yml and
+# wires fde-backend -> LITELLM_PROXY_URL=http://localhost:4000.
+#
+# Prerequisites (one-time, on the host):
+#   sudo apt-get install -y postgresql postgresql-contrib
+#   sudo systemctl enable --now postgresql
+#   sudo -u postgres psql -c "CREATE ROLE litellm WITH LOGIN PASSWORD '...';"
+#   sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
 #
 # Usage:
 #   cd deploy/litellm
-#   cp .env.example .env   # set LITELLM_MASTER_KEY + provider keys
+#   cp .env.example .env   # set LITELLM_MASTER_KEY + provider keys + DATABASE_URL
 #   docker compose up -d
 #   curl -f http://localhost:4000/health/liveliness
 # ===================================================================
@@ -17,8 +24,9 @@ services:
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: fde-litellm
-    ports:
-      - "4000:4000"
+    # Host networking lets the proxy reach host Postgres on 127.0.0.1:5432
+    # (required for virtual-key storage) and preserves :4000 on the host.
+    network_mode: host
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     environment:
@@ -26,6 +34,7 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       GLM_API_KEY: ${GLM_API_KEY}
       QWEN_API_KEY: ${QWEN_API_KEY}
+      DATABASE_URL: ${DATABASE_URL}
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     restart: unless-stopped
     healthcheck:
@@ -46,9 +55,3 @@ services:
           # 1.5G is safe on the 11G host (≈8G free) and leaves headroom for FDE+Dify+Qdrant.
           memory: 1536M
           cpus: "1.0"
-    networks:
-      - litellm-net
-
-networks:
-  litellm-net:
-    driver: bridge
