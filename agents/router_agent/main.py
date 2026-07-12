@@ -153,6 +153,16 @@ try:
 except ImportError:
     logger.warning("Pricing agent router unavailable — /api/pricing endpoints disabled")
 
+# ── Marketing Router (V5-⑤ GEO / 广告 / 内容 / 分析) ──────────
+
+try:
+    from agents.marketing_agent.router import router as marketing_router
+
+    app.include_router(marketing_router)
+    logger.info("Marketing router registered at /api/marketing/*")
+except ImportError:
+    logger.warning("Marketing agent router unavailable — /api/marketing endpoints disabled")
+
 # ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
 
 
