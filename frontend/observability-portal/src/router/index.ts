@@ -6,6 +6,7 @@ import ApiManagementView from "../views/ApiManagementView.vue";
 import RagInspectorView from "../views/RagInspectorView.vue";
 import TraceViewerView from "../views/TraceViewerView.vue";
 import AuditTrailView from "../views/AuditTrailView.vue";
+import AlertsView from "../views/AlertsView.vue";
 
 const routes = [
   { path: "/", name: "overview", component: OverviewView, meta: { title: "Overview" } },
@@ -15,6 +16,7 @@ const routes = [
   { path: "/rag", name: "rag", component: RagInspectorView, meta: { title: "RAG Inspector" } },
   { path: "/traces", name: "traces", component: TraceViewerView, meta: { title: "Trace Viewer" } },
   { path: "/audit", name: "audit", component: AuditTrailView, meta: { title: "Audit Trail" } },
+  { path: "/alerts", name: "alerts", component: AlertsView, meta: { title: "Alerts & Drift" } },
 ];
 
 const router = createRouter({

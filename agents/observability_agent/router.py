@@ -20,15 +20,28 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, Query
+from fastapi import APIRouter, FastAPI, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from agents.observability_agent.alerting import (
+    delete_alert_rule,
+    evaluate_alerts,
+    get_alert_rules,
+    get_alerts,
+    get_drift_report,
+    set_alert_rule,
+)
 from agents.observability_agent.api_keys import (
     create_api_key,
     delete_api_key,
     get_external_apis,
     list_api_keys,
     update_api_key,
+)
+from agents.observability_agent.audit_store import (
+    export_audit_logs,
+    get_audit_logs,
+    record_audit_event,
 )
 from agents.observability_agent.budget import (
     get_budget,
@@ -103,6 +116,16 @@ def set_app(app: FastAPI) -> None:
     """Store reference to the FastAPI app for endpoint scanning."""
     global _app
     _app = app
+
+
+def _actor(request: Request | None = None) -> str:
+    """Derive the audit actor from the authenticated API key, else 'admin'."""
+    if request is not None:
+        name = getattr(request.state, "api_key_name", None)
+        uid = getattr(request.state, "api_user_id", None)
+        if name:
+            return f"{name}" + (f"({uid})" if uid else "")
+    return "admin"
 
 
 # ── Three-tier health probes ─────────────────────────────────────
@@ -362,9 +385,17 @@ async def get_budget_endpoint(
 
 
 @router.post("/tokens/budget")
-async def set_budget_endpoint(req: BudgetRequest) -> dict[str, Any]:
+async def set_budget_endpoint(req: BudgetRequest, request: Request) -> dict[str, Any]:
     """Set or update the daily budget for an agent module."""
-    return set_budget(req.agent_module, req.daily_limit_usd)
+    result = set_budget(req.agent_module, req.daily_limit_usd)
+    record_audit_event(
+        actor=_actor(request),
+        action="budget.set",
+        resource_type="agent_module",
+        resource_id=req.agent_module,
+        detail=f"daily_limit_usd={req.daily_limit_usd}",
+    )
+    return result
 
 
 @router.get("/tokens/budget/events")
@@ -402,14 +433,22 @@ class UpdateKeyRequest(BaseModel):
 
 
 @router.post("/api/keys")
-async def create_key(req: CreateKeyRequest) -> dict[str, Any]:
+async def create_key(req: CreateKeyRequest, request: Request) -> dict[str, Any]:
     """Create a new API key."""
-    return create_api_key(
+    result = create_api_key(
         name=req.name,
         user_id=req.user_id,
         quota_tpm=req.quota_tpm,
         quota_rpm=req.quota_rpm,
     )
+    record_audit_event(
+        actor=_actor(request),
+        action="api_key.create",
+        resource_type="api_key",
+        resource_id=result["key_id"],
+        detail=f"name={req.name}",
+    )
+    return result
 
 
 @router.get("/api/keys")
@@ -419,7 +458,7 @@ async def list_keys() -> list[dict[str, Any]]:
 
 
 @router.put("/api/keys/{key_id}")
-async def update_key(key_id: str, req: UpdateKeyRequest) -> dict[str, Any]:
+async def update_key(key_id: str, req: UpdateKeyRequest, request: Request) -> dict[str, Any]:
     """Update an API key's attributes."""
     result = update_api_key(
         key_id=key_id,
@@ -432,17 +471,30 @@ async def update_key(key_id: str, req: UpdateKeyRequest) -> dict[str, Any]:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail=f"API key not found: {key_id}")
+    record_audit_event(
+        actor=_actor(request),
+        action="api_key.update",
+        resource_type="api_key",
+        resource_id=key_id,
+        detail=f"name={req.name},enabled={req.enabled}",
+    )
     return result
 
 
 @router.delete("/api/keys/{key_id}")
-async def delete_key(key_id: str) -> dict[str, Any]:
+async def delete_key(key_id: str, request: Request) -> dict[str, Any]:
     """Delete an API key."""
     success = delete_api_key(key_id)
     if not success:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail=f"API key not found: {key_id}")
+    record_audit_event(
+        actor=_actor(request),
+        action="api_key.delete",
+        resource_type="api_key",
+        resource_id=key_id,
+    )
     return {"deleted": True, "key_id": key_id}
 
 
@@ -455,7 +507,7 @@ async def external_apis() -> list[dict[str, Any]]:
     return get_external_apis()
 
 
-# ── RAG inspector (stub — Phase 3 will implement) ────────────────
+# ── RAG inspector (Phase 3) ──────────────────────────────────────
 
 
 @router.get("/rag/docs")
@@ -463,49 +515,271 @@ async def rag_docs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     doc_type: str | None = None,
+    source: str | None = None,
 ) -> dict[str, Any]:
     """List documents in RAG store (Phase 3)."""
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total": 0,
-        "data": [],
-        "note": "Phase 3 will implement RAG inspector",
-    }
+    from agents.observability_agent.rag_inspector import list_documents
+
+    return await list_documents(page=page, page_size=page_size, doc_type=doc_type, source=source)
 
 
-# ── Traces (stub — Phase 3 will implement) ───────────────────────
+@router.get("/rag/docs/{doc_id}/chunks")
+async def rag_doc_chunks(
+    doc_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> dict[str, Any]:
+    """Get all chunks for a document (Phase 3)."""
+    from agents.observability_agent.rag_inspector import get_document_chunks
+
+    return await get_document_chunks(doc_id=doc_id, page=page, page_size=page_size)
+
+
+@router.get("/rag/chunks/{chunk_id}")
+async def rag_chunk_detail(chunk_id: str) -> dict[str, Any]:
+    """Get detailed chunk info including vector preview (Phase 3)."""
+    from agents.observability_agent.rag_inspector import get_chunk_detail
+
+    detail = await get_chunk_detail(chunk_id)
+    if detail is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Chunk not found: {chunk_id}")
+    return detail
+
+
+@router.delete("/rag/docs/{doc_id}")
+async def rag_delete_doc(doc_id: str, confirm: str | None = Query(None, description="Must be 'DELETE'"), request: Request = None) -> dict[str, Any]:
+    """Delete a document: cascade Qdrant + Postgres + FTS (Phase 3)."""
+    if confirm != "DELETE":
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="Require confirm=DELETE in query string")
+    from agents.observability_agent.rag_inspector import delete_document
+
+    result = await delete_document(doc_id)
+    record_audit_event(
+        actor=_actor(request),
+        action="rag.document.delete",
+        resource_type="document",
+        resource_id=doc_id,
+        status="ok" if result.get("deleted") else "failed",
+    )
+    return result
+
+
+@router.post("/rag/docs/{doc_id}/reindex")
+async def rag_reindex_doc(doc_id: str, request: Request = None) -> dict[str, Any]:
+    """Re-chunk + re-embed + re-upsert a document (Phase 3)."""
+    from agents.observability_agent.rag_inspector import reindex_document
+
+    try:
+        result = await reindex_document(doc_id)
+        record_audit_event(
+            actor=_actor(request),
+            action="rag.document.reindex",
+            resource_type="document",
+            resource_id=doc_id,
+            status="ok" if result.get("reindexed") else "failed",
+        )
+        return result
+    except Exception as e:
+        logger.exception("reindex failed for %s", doc_id)
+        record_audit_event(
+            actor=_actor(request),
+            action="rag.document.reindex",
+            resource_type="document",
+            resource_id=doc_id,
+            status="failed",
+            detail=str(e),
+        )
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=500, detail=f"Reindex failed: {e}")
+
+
+@router.post("/rag/debug/retrieve")
+async def rag_debug_retrieve(
+    body: dict[str, Any],
+) -> dict[str, Any]:
+    """Replay a retrieval: QueryRewrite + HybridSearch + Reranker (Phase 3)."""
+    from agents.observability_agent.rag_inspector import debug_retrieve
+
+    query = body.get("query", "")
+    top_k = int(body.get("top_k", 10))
+    doc_type = body.get("doc_type")
+
+    if not query:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="query is required")
+
+    try:
+        return await debug_retrieve(query=query, top_k=top_k, doc_type=doc_type)
+    except Exception as e:
+        logger.exception("retrieve debug failed")
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=500, detail=f"Retrieve failed: {e}")
+
+
+# ── Traces (Phase 3) ─────────────────────────────────────────────
 
 
 @router.get("/traces")
 async def traces(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    service: str | None = None,
     status: str | None = None,
+    min_duration_ms: float | None = Query(None, description="Minimum span duration in ms"),
 ) -> dict[str, Any]:
     """List traces (Phase 3)."""
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total": 0,
-        "data": [],
-        "note": "Phase 3 will implement trace store",
-    }
+    from agents.observability_agent.trace_store import get_traces
+
+    return get_traces(
+        page=page,
+        page_size=page_size,
+        service=service,
+        status=status,
+        min_duration_ms=min_duration_ms,
+    )
 
 
-# ── Audit (stub — Phase 4 will implement) ────────────────────────
+# NOTE: /traces/stats MUST be registered before /traces/{trace_id} so the
+# static "stats" path is not captured by the dynamic {trace_id} parameter.
+@router.get("/traces/stats")
+async def trace_stats() -> dict[str, Any]:
+    """Get trace statistics: P50/P95/P99 + error rate + hot paths (Phase 3)."""
+    from agents.observability_agent.trace_store import get_span_types, get_trace_stats
+
+    stats = get_trace_stats()
+    stats["span_types"] = get_span_types()
+    return stats
+
+
+@router.get("/traces/{trace_id}")
+async def trace_detail(trace_id: str) -> dict[str, Any]:
+    """Get full span tree for a trace (Phase 3)."""
+    from agents.observability_agent.trace_store import get_trace_tree
+
+    tree = get_trace_tree(trace_id)
+    if tree is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Trace not found: {trace_id}")
+    return tree
+
+
+# ── Alerting & Drift Detection (Phase 4) ────────────────────────
+
+
+class AlertRuleRequest(BaseModel):
+    """Request body for creating/updating an alert rule."""
+
+    metric: str = Field(..., description="error_rate|p95_ms|daily_cost_usd|budget_exceeded")
+    operator: str = Field("gt", description="gt|gte|lt|lte")
+    threshold: float = Field(..., description="Trigger threshold")
+    severity: str = Field("warning", description="info|warning|critical")
+    enabled: bool = True
+    description: str = ""
+
+
+@router.get("/alerts")
+async def alerts_endpoint(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    severity: str | None = None,
+) -> dict[str, Any]:
+    """List fired alerts (Phase 4)."""
+    return get_alerts(page=page, page_size=page_size, severity=severity)
+
+
+@router.post("/alerts/evaluate")
+async def alerts_evaluate() -> dict[str, Any]:
+    """Evaluate all alert rules against current metrics + compute drift (Phase 4)."""
+    return evaluate_alerts()
+
+
+@router.get("/alerts/rules")
+async def alert_rules_get() -> list[dict[str, Any]]:
+    """Get all alert rule definitions (Phase 4)."""
+    return get_alert_rules()
+
+
+@router.post("/alerts/rules")
+async def alert_rules_set(req: AlertRuleRequest) -> dict[str, Any]:
+    """Create or update an alert rule (Phase 4)."""
+    rule_id = req.metric + "_" + req.operator
+    return set_alert_rule(
+        rule_id=rule_id,
+        metric=req.metric,
+        operator=req.operator,
+        threshold=req.threshold,
+        severity=req.severity,
+        enabled=req.enabled,
+        description=req.description,
+    )
+
+
+@router.delete("/alerts/rules/{rule_id}")
+async def alert_rules_delete(rule_id: str) -> dict[str, Any]:
+    """Delete an alert rule (Phase 4)."""
+    deleted = delete_alert_rule(rule_id)
+    if not deleted:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"Alert rule not found: {rule_id}")
+    return {"deleted": True, "rule_id": rule_id}
+
+
+@router.get("/drift")
+async def drift_endpoint() -> dict[str, Any]:
+    """Get metric drift report (Phase 4)."""
+    return get_drift_report()
+
+
+# ── Audit (Phase 4) ──────────────────────────────────────────────
 
 
 @router.get("/audit/logs")
 async def audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    actor: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
 ) -> dict[str, Any]:
-    """List audit log entries (Phase 4)."""
-    return {
-        "page": page,
-        "page_size": page_size,
-        "total": 0,
-        "data": [],
-        "note": "Phase 4 will implement audit trail",
-    }
+    """List audit log entries (Phase 4) with optional filters."""
+    return get_audit_logs(
+        page=page,
+        page_size=page_size,
+        actor=actor,
+        action=action,
+        resource_type=resource_type,
+        status=status,
+        since=since,
+    )
+
+
+@router.get("/audit/export")
+async def audit_export(
+    format: str = Query("csv", description="Export format: csv"),
+    actor: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    status: str | None = None,
+) -> Response:
+    """Export audit log as CSV (Phase 4)."""
+    from fastapi.responses import PlainTextResponse
+
+    csv_text = export_audit_logs(
+        format=format,
+        actor=actor,
+        action=action,
+        resource_type=resource_type,
+        status=status,
+    )
+    return PlainTextResponse(csv_text, media_type="text/csv")

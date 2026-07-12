@@ -63,3 +63,40 @@ groups:
         annotations:
           summary: "FDE Backend is down"
           description: "Metrics endpoint unreachable for over 1 minute"
+
+  # ── Observability platform monitoring (Phase 4) ──────────────────
+  # Cost/budget/drift alerts are evaluated app-side by the observability
+  # agent (/api/observability/alerts/evaluate); this group watches the
+  # monitoring layer itself so we are never blind to our own outage.
+  - name: fde-observability
+    interval: 30s
+    rules:
+      - alert: ObservabilityEndpointErrors
+        expr: rate(fde_http_requests_total{endpoint=~"/api/observability/.*",status=~"5.."}[5m]) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          category: observability
+        annotations:
+          summary: "Observability API returning 5xx errors"
+          description: "Error rate on /api/observability is {{ $value | humanizePercentage }}"
+
+      - alert: ObservabilityUnreachable
+        expr: up{job="fde-observability"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: observability
+        annotations:
+          summary: "Observability portal/API unreachable"
+          description: "The /obs monitoring surface is down — alerting may be blind"
+
+      - alert: HealthProbeFailing
+        expr: max by (category) (rate(fde_http_requests_total{endpoint="/readyz",status=~"5.."}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: observability
+        annotations:
+          summary: "Readiness probe (/readyz) failing"
+          description: "Backend is reporting not-ready — upstream dependencies may be degraded"

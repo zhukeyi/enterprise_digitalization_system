@@ -32,6 +32,7 @@ const navItems = [
   { path: "/rag", label: "RAG Inspector", icon: "\u25C8" },
   { path: "/traces", label: "Trace Viewer", icon: "\u25CB" },
   { path: "/audit", label: "Audit Trail", icon: "\u25A3" },
+  { path: "/alerts", label: "Alerts & Drift", icon: "\u26A1" },
 ];
 </script>
 
