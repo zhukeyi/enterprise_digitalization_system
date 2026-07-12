@@ -45,16 +45,27 @@ LiteLLM Proxy :4000  ── 虚拟 Key 强制: 模型白名单 + 预算 + 限流
 配置文件：`deploy/litellm/config.yaml` + `deploy/litellm/docker-compose.yml`
 
 ```bash
+# 前置：安装并启动 PostgreSQL（虚拟 Key 存储必需，见下方说明）
+sudo apt-get install -y postgresql postgresql-contrib
+sudo systemctl enable --now postgresql
+sudo -u postgres psql -c "CREATE ROLE litellm WITH LOGIN PASSWORD '<pwd>';"
+sudo -u postgres psql -c "CREATE DATABASE litellm OWNER litellm;"
+
 cd deploy/litellm
-cp .env.example .env        # 设置 LITELLM_MASTER_KEY + 各 Provider Key
+cp .env.example .env        # 设置 LITELLM_MASTER_KEY + 各 Provider Key + DATABASE_URL
 docker compose up -d
 curl -f http://localhost:4000/health/liveliness
 ```
 
-- 独立容器 `fde-litellm`，端口 `:4000`，自有 bridge 网络，内存上限 **512M**。
+- 独立容器 `fde-litellm`，端口 `:4000`，**host 网络模式**（以便访问宿主机
+  `127.0.0.1:5432` 的 PostgreSQL），内存上限 **1.5G**（512M 会在启动时被
+  OOM-kill，exit 137）。
+- **虚拟 Key 需要 PostgreSQL**：LiteLLM 1.93.0 的 `/key/*` 端点强制要求
+  `DATABASE_URL`（PostgreSQL 连接串），SQLite 会被拒绝。宿主机已装 Postgres 16，
+  库名 `litellm`，角色 `litellm`。
 - 不改动现有 FDE 后端 / nginx / Dify / Qdrant 链路。
 - P0-B 会把它合并进主 `docker-compose.prod.yml`，并把
-  `LITELLM_PROXY_URL=http://fde-litellm:4000` 注入 fde-backend 服务。
+  `LITELLM_PROXY_URL=http://localhost:4000` 注入 fde-backend 服务。
 
 ## 4. 多租户模型
 
@@ -122,4 +133,20 @@ pytest agents/router_agent/tests/test_litellm_adapter.py \
   质量与延迟更优；embedding 经 LiteLLM 透传为后续可选项。
 - **角色级管理员授权**：当前租户路由由 app 级 APIKeyMiddleware 统一鉴权，
   细粒度 admin 角色是 P0-B 加固项。
-- **持久化**：租户存储为单实例内存；多实例时需换 SQLite/Postgres。
+- **持久化**：FDE 侧租户存储为单实例内存；多实例时需换 SQLite/Postgres。
+  LiteLLM 侧虚拟 Key 已落 Postgres（持久）。
+
+### 9.1 部署实测约束（litellm:main-latest = 1.93.0）
+
+- **虚拟 Key 必须 PostgreSQL**：`/key/generate|info|delete` 在缺 `DATABASE_URL`
+  时返回 500 "DB not connected"；SQLite 不被接受。已装宿主机 Postgres 16 解决。
+- **Provider 可用性**：该镜像仅含 `deepseek` + `dashscope`(Qwen) 实现模块，
+  **无 `zhipu` 模块**，故 `fde-premium`(glm-4-flash) 在 `config.yaml` 中默认注释。
+  `fde-frontier` 用 `custom_llm_provider: dashscope` 承接 Qwen。
+  如需 zhipu，需换含该 provider 的完整镜像或自构建镜像。
+- **配置键名**：模型声明必须用 `custom_llm_provider`（不是被本版忽略的
+  `litellm_provider` 别名）；模型字符串不推断 `zhipu/` `qwen/` 前缀。
+- **有效 Provider Key**：真实 LLM 调用要求 `DEEPSEEK_API_KEY`/`QWEN_API_KEY` 等为
+  真实密钥。当前演示服务器的 `.env` 为占位 Key（如 `sk-stu…ub-key`），
+  因此上游调用会 401、网关回退 Mock——这是环境密钥问题，非代码缺陷。
+  填入有效 Key 后即端到端可用（网关/虚拟 Key/预算/限流均已验证通过）。
