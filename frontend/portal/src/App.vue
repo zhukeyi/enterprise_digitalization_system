@@ -18,6 +18,7 @@ function logout() {
     <header v-if="loggedIn" class="topbar">
       <div class="brand">FDE 数据门户</div>
       <nav class="nav">
+        <RouterLink to="/dashboard" class="nav-link">驾驶舱</RouterLink>
         <RouterLink to="/upload" class="nav-link">上传</RouterLink>
         <RouterLink to="/chat" class="nav-link">对话</RouterLink>
         <button class="link-btn" @click="logout">退出</button>
@@ -68,6 +69,11 @@ function logout() {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
+.nav-link.router-link-active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 600;
+}
 .link-btn {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.4);
@@ -83,7 +89,7 @@ function logout() {
 .content {
   flex: 1;
   padding: 24px;
-  max-width: 960px;
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;

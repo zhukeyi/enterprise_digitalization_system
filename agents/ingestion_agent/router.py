@@ -11,15 +11,22 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.governance_agent.database.session import get_async_session
 from agents.ingestion_agent.cache import Cache, get_cache
+from agents.ingestion_agent.database.models import (
+    CanonicalDocument,
+    DocumentChunk,
+    RawDocument,
+)
 from agents.ingestion_agent.pipeline import IngestionPipeline
 from agents.ingestion_agent.query import QueryService
 from agents.ingestion_agent.storage import ObjectStorage, get_storage, make_storage_key
@@ -221,6 +228,86 @@ async def ask(
         count=result["count"],
         sources=result["sources"],
         cached=bool(result.get("cached", False)),
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# Dashboard API (V5-② 交付驾驶舱)
+# ══════════════════════════════════════════════════════════════════
+
+
+class DashboardStats(BaseModel):
+    """Dashboard 统计概览。"""
+
+    total_documents: int
+    total_chunks: int
+    total_raw: int
+    doc_types: list[dict[str, Any]]
+    recent_uploads: list[dict[str, Any]]
+    daily_ingest: list[dict[str, Any]]
+
+
+@router.get("/api/dashboard/stats", response_model=DashboardStats)
+async def dashboard_stats(
+    session: AsyncSession = Depends(get_async_session),
+) -> DashboardStats:
+    """驾驶舱统计数据：文档总量、切片数、按类型分布、最近上传、每日入库趋势。"""
+    # 总量统计
+    raw_count = await session.scalar(select(func.count(RawDocument.id)))
+    canonical_count = await session.scalar(select(func.count(CanonicalDocument.id)))
+    chunk_count = await session.scalar(select(func.count(DocumentChunk.id)))
+
+    # 按 doc_type 分布
+    type_stmt = (
+        select(CanonicalDocument.doc_type, func.count(CanonicalDocument.id))
+        .group_by(CanonicalDocument.doc_type)
+        .order_by(func.count(CanonicalDocument.id).desc())
+    )
+    type_rows = (await session.execute(type_stmt)).all()
+    doc_types = [{"name": r[0], "count": r[1]} for r in type_rows]
+
+    # 最近 10 条上传
+    recent_stmt = (
+        select(
+            CanonicalDocument.id,
+            CanonicalDocument.title,
+            CanonicalDocument.doc_type,
+            CanonicalDocument.created_at,
+        )
+        .order_by(CanonicalDocument.created_at.desc())
+        .limit(10)
+    )
+    recent_rows = (await session.execute(recent_stmt)).all()
+    recent_uploads = [
+        {
+            "id": str(r[0]),
+            "title": r[1],
+            "doc_type": r[2],
+            "created_at": r[3].isoformat() if r[3] else None,
+        }
+        for r in recent_rows
+    ]
+
+    # 最近 7 天每日入库数
+    now = datetime.now(UTC)
+    daily: list[dict[str, Any]] = []
+    for i in range(6, -1, -1):
+        day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        stmt = select(func.count(CanonicalDocument.id)).where(
+            CanonicalDocument.created_at >= day_start,
+            CanonicalDocument.created_at < day_end,
+        )
+        count = await session.scalar(stmt) or 0
+        daily.append({"date": day_start.strftime("%m-%d"), "count": count})
+
+    return DashboardStats(
+        total_documents=canonical_count or 0,
+        total_chunks=chunk_count or 0,
+        total_raw=raw_count or 0,
+        doc_types=doc_types,
+        recent_uploads=recent_uploads,
+        daily_ingest=daily,
     )
 
 

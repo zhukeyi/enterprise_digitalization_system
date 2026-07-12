@@ -53,3 +53,38 @@ export async function askData(
   })
   return data
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Dashboard API (V5-②)
+// ══════════════════════════════════════════════════════════════════
+
+export interface DocTypeItem {
+  name: string
+  count: number
+}
+
+export interface RecentUpload {
+  id: string
+  title: string
+  doc_type: string
+  created_at: string | null
+}
+
+export interface DailyIngest {
+  date: string
+  count: number
+}
+
+export interface DashboardStats {
+  total_documents: number
+  total_chunks: number
+  total_raw: number
+  doc_types: DocTypeItem[]
+  recent_uploads: RecentUpload[]
+  daily_ingest: DailyIngest[]
+}
+
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const { data } = await client.get<DashboardStats>('/api/dashboard/stats')
+  return data
+}
