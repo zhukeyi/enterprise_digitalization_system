@@ -1,0 +1,34 @@
+:root {
+  --bg: #f4f6fb;
+  --card: #ffffff;
+  --text: #1a2238;
+  --muted: #5b6680;
+  --line: rgba(20, 30, 60, 0.1);
+  --accent: #4f7cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  background:
+    radial-gradient(900px 460px at 100% -8%, rgba(167, 139, 250, 0.12), transparent 55%),
+    radial-gradient(900px 460px at -5% 0%, rgba(79, 124, 255, 0.12), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
