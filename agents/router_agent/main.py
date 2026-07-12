@@ -133,6 +133,16 @@ try:
 except ImportError:
     logger.warning("Data agent router unavailable — /api/intelligence endpoints disabled")
 
+# ── HR Router (V5-⑥ HR 智能评估) ─────────────────────────────
+
+try:
+    from agents.hr_agent.router import router as hr_router
+
+    app.include_router(hr_router)
+    logger.info("HR router registered at /api/hr/*")
+except ImportError:
+    logger.warning("HR agent router unavailable — /api/hr endpoints disabled")
+
 # ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
 
 
