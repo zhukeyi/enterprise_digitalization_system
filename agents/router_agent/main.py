@@ -143,6 +143,16 @@ try:
 except ImportError:
     logger.warning("HR agent router unavailable — /api/hr endpoints disabled")
 
+# ── Pricing Router (V5-⑦ 动态定价引擎) ───────────────────────
+
+try:
+    from agents.pricing_agent.router import router as pricing_router
+
+    app.include_router(pricing_router)
+    logger.info("Pricing router registered at /api/pricing/*")
+except ImportError:
+    logger.warning("Pricing agent router unavailable — /api/pricing endpoints disabled")
+
 # ── Dify OpenAPI spec endpoint (P7: Dify Custom Tool import) ────
 
 
@@ -153,7 +163,6 @@ async def dify_openapi_spec():
     In Dify: 工具 → 创建自定义工具 → OpenAPI → 输入 URL:
     https://host:8443/fde-api/dify/openapi.yaml
     """
-    import yaml
     from pathlib import Path
 
     spec_path = Path(__file__).resolve().parent.parent.parent / "docs" / "fde-dify-openapi.yaml"
