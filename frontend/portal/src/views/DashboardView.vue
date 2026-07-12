@@ -1,25 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import * as echarts from 'echarts'
+import BaseChart from '../components/BaseChart.vue'
 import { getDashboardStats, type DashboardStats } from '../api/client'
 
 const stats = ref<DashboardStats | null>(null)
 const loading = ref(true)
 const error = ref('')
 
-// chart refs
-const dailyChartRef = ref<HTMLElement | null>(null)
-const typeChartRef = ref<HTMLElement | null>(null)
-let dailyChart: echarts.ECharts | null = null
-let typeChart: echarts.ECharts | null = null
-
 async function loadStats() {
   loading.value = true
   error.value = ''
   try {
     stats.value = await getDashboardStats()
-    await nextTick()
-    renderCharts()
   } catch (err: unknown) {
     const detail = (err as { response?: { data?: { detail?: string } }; message?: string })
       ?.response?.data?.detail
@@ -29,92 +22,67 @@ async function loadStats() {
   }
 }
 
-function renderCharts() {
-  if (!stats.value) return
-
-  // daily ingest trend
-  if (dailyChartRef.value) {
-    if (dailyChart) dailyChart.dispose()
-    dailyChart = echarts.init(dailyChartRef.value)
-    dailyChart.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 40, right: 20, top: 20, bottom: 30 },
-      xAxis: {
-        type: 'category',
-        data: stats.value.daily_ingest.map((d) => d.date),
-        axisLabel: { fontSize: 12, color: '#6b7280' },
-      },
-      yAxis: {
-        type: 'value',
-        minInterval: 1,
-        axisLabel: { fontSize: 12, color: '#6b7280' },
-      },
-      series: [
-        {
-          type: 'bar',
-          data: stats.value.daily_ingest.map((d) => d.count),
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: '#3b82f6' },
-              { offset: 1, color: '#93c5fd' },
-            ]),
-            borderRadius: [4, 4, 0, 0],
-          },
-          barWidth: '50%',
+// Reusable chart options — now declared as plain data instead of inline echarts calls.
+const dailyOption = computed<Record<string, unknown>>(() => {
+  if (!stats.value) return {}
+  return {
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 20, top: 20, bottom: 30 },
+    xAxis: {
+      type: 'category',
+      data: stats.value.daily_ingest.map((d) => d.date),
+      axisLabel: { fontSize: 12, color: '#6b7280' },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { fontSize: 12, color: '#6b7280' },
+    },
+    series: [
+      {
+        type: 'bar',
+        data: stats.value.daily_ingest.map((d) => d.count),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#3b82f6' },
+            { offset: 1, color: '#93c5fd' },
+          ]),
+          borderRadius: [4, 4, 0, 0],
         },
-      ],
-    })
-  }
-
-  // doc type distribution
-  if (typeChartRef.value) {
-    if (typeChart) typeChart.dispose()
-    typeChart = echarts.init(typeChartRef.value)
-    const typeData = stats.value.doc_types.map((t) => ({
-      name: t.name,
-      value: t.count,
-    }))
-    typeChart.setOption({
-      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      legend: {
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        textStyle: { fontSize: 12, color: '#374151' },
+        barWidth: '50%',
       },
-      series: [
-        {
-          type: 'pie',
-          radius: ['40%', '70%'],
-          center: ['40%', '50%'],
-          avoidLabelOverlap: false,
-          label: { show: false },
-          emphasis: {
-            label: { show: true, fontSize: 14, fontWeight: 'bold' },
-          },
-          data: typeData,
-          color: ['#1e3a8a', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#f59e0b', '#10b981'],
-        },
-      ],
-    })
+    ],
   }
-}
-
-function handleResize() {
-  dailyChart?.resize()
-  typeChart?.resize()
-}
-
-onMounted(() => {
-  loadStats()
-  window.addEventListener('resize', handleResize)
 })
 
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  dailyChart?.dispose()
-  typeChart?.dispose()
+const typeOption = computed<Record<string, unknown>>(() => {
+  if (!stats.value) return {}
+  return {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: {
+      orient: 'vertical',
+      right: 10,
+      top: 'center',
+      textStyle: { fontSize: 12, color: '#374151' },
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['40%', '50%'],
+        avoidLabelOverlap: false,
+        label: { show: false },
+        emphasis: {
+          label: { show: true, fontSize: 14, fontWeight: 'bold' },
+        },
+        data: stats.value.doc_types.map((t) => ({ name: t.name, value: t.count })),
+        color: ['#1e3a8a', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe', '#f59e0b', '#10b981'],
+      },
+    ],
+  }
 })
+
+onMounted(loadStats)
 
 function formatTime(iso: string | null): string {
   if (!iso) return '-'
@@ -179,11 +147,11 @@ function formatTime(iso: string | null): string {
       <div class="chart-grid">
         <div class="chart-card">
           <h3>近 7 日入库趋势</h3>
-          <div ref="dailyChartRef" class="chart-canvas" />
+          <BaseChart :option="dailyOption" />
         </div>
         <div class="chart-card">
           <h3>数据类型分布</h3>
-          <div ref="typeChartRef" class="chart-canvas" />
+          <BaseChart :option="typeOption" />
         </div>
       </div>
 

@@ -177,3 +177,58 @@ def test_strategies(client):
 def test_404_product(client):
     r = client.get("/api/pricing/elasticity/NOPE")
     assert r.status_code == 404
+
+
+# ── Edge cases ─────────────────────────────────────────────────────
+
+
+def test_elasticity_estimator_insufficient_history_raises():
+    est = ElasticityEstimator()
+    with pytest.raises(ValueError):
+        est.estimate("X", [SalesPoint(date=None, price=100.0, quantity=10.0)])
+    with pytest.raises(ValueError):
+        est.estimate("X", [])
+
+
+def test_optimize_guardrail_within_bounds_all_products(client):
+    # every product's RL recommendation must stay within ±30% of current price
+    for pid in [f"P{idx:03d}" for idx in range(1, 13)]:
+        r = client.post(f"/api/pricing/optimize/{pid}?strategy=rl_optimal")
+        assert r.status_code == 200, pid
+        data = r.json()
+        cur = data["current_price"]
+        rec = data["recommended_price"]
+        assert rec <= cur * 1.3 + 1e-6, f"{pid} above +30%"
+        assert rec >= cur * 0.7 - 1e-6, f"{pid} below -30%"
+
+
+def test_simulate_below_cost_no_crash(client):
+    # pricing below cost → negative delta profit but endpoint must not error
+    r = client.post("/api/pricing/simulate", json={"product_id": "P001", "new_price": 1.0})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["new_price"] == 1.0
+    assert "delta_profit_pct" in data
+    assert data["delta_profit_pct"] < 0  # below cost → loss
+
+
+def test_competitor_snapshot_structure(client):
+    r = client.get("/api/pricing/competitors/P001")
+    assert r.status_code == 200
+    snap = r.json()
+    for key in ("product_id", "own_price", "avg_competitor", "min_competitor", "max_competitor", "position"):
+        assert key in snap
+    assert snap["position"] in ("cheaper", "parity", "premium")
+    assert snap["max_competitor"] >= snap["min_competitor"]
+
+
+def test_forecast_flat_series():
+    # constant demand → forecast stays non-negative, residual_std is a valid number
+    pts = [DemandPoint(t=i, quantity=100.0) for i in range(30)]
+    fc = DemandForecaster(seasonal_period=7).forecast(pts, periods=7)
+    assert len(fc.forecast) == 7
+    assert all(v["value"] >= 0 for v in fc.forecast)
+    assert fc.residual_std >= 0
+    # flat input → tight band (lower/upper close to value)
+    for v in fc.forecast:
+        assert v["upper"] >= v["value"] >= v["lower"]

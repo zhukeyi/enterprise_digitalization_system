@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agents.marketing_agent.ads import ABTester, BudgetAllocator, VariantGenerator
 from agents.marketing_agent.analytics import PerformanceTracker, ROIPredictor
-from agents.marketing_agent.content import GEOWriter, SEOWriter
+from agents.marketing_agent.content import GEOWriter, MultilingualWriter, SEOWriter
 from agents.marketing_agent.data_connector import get_connector
 from agents.marketing_agent.geo import ContentOptimizer, KeywordStrategy, VisibilityTracker
 from agents.marketing_agent.models import PlatformPerformance
@@ -147,3 +147,96 @@ def test_platformperformance_roas_derived():
     assert p.roas == 3.5
     assert p.ctr == 0.03
     assert p.cpc == 1000 / 300
+
+
+# ── Edge cases ─────────────────────────────────────────────────────
+
+
+def test_multilingual_writer_covers_all_target_langs():
+    m = MultilingualWriter().write("云栖智能", "企业AI平台", ["en", "ja", "ko", "fr"])
+    assert m.source_lang == "zh"
+    assert set(m.target_langs) == {"en", "ja", "ko", "fr"}
+    # every requested language (incl. source) has a generated piece
+    for lang in ["zh", "en", "ja", "ko", "fr"]:
+        assert lang in m.pieces
+        assert m.pieces[lang].title
+        assert m.pieces[lang].body
+        assert m.pieces[lang].geo_optimized is True
+
+
+def test_multilingual_writer_fallback_for_unknown_lang():
+    # a language without a template falls back to a transliteration-style stub
+    m = MultilingualWriter().write("云栖智能", "企业AI平台", ["xx"])
+    assert "xx" in m.pieces
+    assert "[xx]" in m.pieces["xx"].title
+
+
+def test_ab_test_rejects_non_positive_impressions():
+    import pytest
+
+    with pytest.raises(ValueError):
+        ABTester().compare("A", "B", 0, 0, 1000, 100)
+    with pytest.raises(ValueError):
+        ABTester().compare("A", "B", 1000, 100, -5, 0)
+
+
+def test_ab_test_equal_ctr_no_winner():
+    r = ABTester().compare("A", "B", 1000, 100, 1000, 100)
+    assert r.winner is None
+    assert r.lift_pct == 0.0
+
+
+def test_ab_test_zero_clicks_no_division_error():
+    # clicks_a = 0 must not raise (lift guarded)
+    r = ABTester().compare("A", "B", 1000, 0, 1000, 50)
+    assert r.lift_pct == 0.0
+    assert r.ctr_a == 0.0
+    assert r.significant is True
+    assert r.winner == "B"
+
+
+def test_budget_allocator_empty_platforms():
+    alloc = BudgetAllocator().allocate([], 100000.0)
+    assert alloc["allocations"] == []
+    assert alloc["uplift_pct"] == 0.0
+    assert alloc["blended_roas"] == 0.0
+
+
+def test_budget_allocator_zero_budget_no_crash():
+    b = _brand()
+    plats = get_connector().get_platforms(b.brand_id)
+    alloc = BudgetAllocator().allocate(plats, 0.0)
+    assert alloc["blended_roas"] == 0.0
+    # allocations still produced (proportional, all zero)
+    assert len(alloc["allocations"]) == len(plats)
+
+
+def test_roi_predictor_zero_spend():
+    b = _brand()
+    plats = get_connector().get_platforms(b.brand_id)
+    pred = ROIPredictor().predict(plats, 0.0)
+    # spend=0 → ROAS undefined → reported as 0, revenue falls to baseline (intercept)
+    assert pred.predicted_roas == 0.0
+    assert pred.predicted_revenue >= 0
+
+
+def test_roi_predictor_needs_two_platforms():
+    import pytest
+
+    b = _brand()
+    with pytest.raises(ValueError):
+        ROIPredictor().predict(get_connector().get_platforms(b.brand_id)[:1], 5000.0)
+
+
+def test_visibility_tracker_rejects_unknown_brand():
+    import pytest
+
+    with pytest.raises(ValueError):
+        VisibilityTracker().track("NON_EXISTENT_BRAND")
+
+
+def test_content_optimizer_empty_input_safe():
+    s = ContentOptimizer().score("", "")
+    assert 0 <= s.eeat_score <= 100
+    assert 0 <= s.citation_score <= 100
+    assert s.suggestions  # always offers improvement suggestions

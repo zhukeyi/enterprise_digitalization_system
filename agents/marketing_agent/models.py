@@ -77,6 +77,15 @@ class ContentPiece(BaseModel):
     created_at: datetime | None = None
 
 
+class MultilingualContent(BaseModel):
+    brand: str
+    topic: str
+    source_lang: str = "zh"
+    target_langs: list[str] = []
+    pieces: dict[str, ContentPiece] = Field(default_factory=dict)
+    generated_at: datetime | None = None
+
+
 # ── Ads ────────────────────────────────────────────────────────────────
 
 

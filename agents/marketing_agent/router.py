@@ -27,12 +27,13 @@ from pydantic import BaseModel
 
 from agents.marketing_agent.ads import ABTester, BudgetAllocator, VariantGenerator
 from agents.marketing_agent.analytics import PerformanceTracker, ROIPredictor
-from agents.marketing_agent.content import GEOWriter, SEOWriter
+from agents.marketing_agent.content import GEOWriter, MultilingualWriter, SEOWriter
 from agents.marketing_agent.data_connector import get_connector
 from agents.marketing_agent.geo import ContentOptimizer, KeywordStrategy, VisibilityTracker
 from agents.marketing_agent.models import (
     BrandVisibility,
     MarketingOverview,
+    MultilingualContent,
 )
 from agents.marketing_agent.report_generator import ReportGenerator
 
@@ -56,6 +57,13 @@ class GenerateRequest(BaseModel):
     topic: str
     area: str | None = None
     n_variants: int = 5
+
+
+class MultilingualRequest(BaseModel):
+    brand: str
+    topic: str
+    target_langs: list[str] | None = None
+    source_lang: str = "zh"
 
 
 class ABTestRequest(BaseModel):
@@ -195,6 +203,15 @@ async def seo_content(req: GenerateRequest) -> dict[str, Any]:
     """生成 SEO 文章。"""
     piece = SEOWriter().write(req.topic, req.brand)
     return piece.model_dump()
+
+
+@router.post("/content/multilingual")
+async def multilingual_content(req: MultilingualRequest) -> dict[str, Any]:
+    """生成多语言 GEO 文案（源语言 + 目标语言本地化）。"""
+    result: MultilingualContent = MultilingualWriter().write(
+        req.brand, req.topic, req.target_langs, req.source_lang
+    )
+    return result.model_dump()
 
 
 @router.post("/ads/generate")
