@@ -13,6 +13,8 @@
         <RouterLink to="/">总览</RouterLink>
         <RouterLink to="/simulator">What-if 模拟</RouterLink>
         <RouterLink to="/strategy">策略优化</RouterLink>
+        <RouterLink to="/elasticity">弹性分析</RouterLink>
+        <RouterLink to="/competitors">竞品监控</RouterLink>
       </nav>
       <div class="status-bar">
         <span class="status-dot" />

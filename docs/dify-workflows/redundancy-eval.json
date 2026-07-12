@@ -1,0 +1,189 @@
+{
+  "version": "0.1.2",
+  "kind": "app",
+  "app": {
+    "name": "裁员方案评估",
+    "mode": "workflow",
+    "icon": "⚖️",
+    "icon_background": "#F3E8FF",
+    "description": "对指定部门做冗余分析并生成人机协作优化建议（最终须人工确认）。",
+    "use_icon_as_answer_icon": false
+  },
+  "workflow": {
+    "features": {
+      "tracing": "enabled",
+      "retry": {},
+      "file_upload": {
+        "image": {
+          "enabled": false
+        },
+        "enabled": false
+      }
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "data": {
+            "type": "start",
+            "title": "开始",
+            "variables": [
+              {
+                "variable": "department_id",
+                "type": "string",
+                "required": true,
+                "label": "部门ID"
+              }
+            ]
+          },
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-redun",
+          "data": {
+            "type": "tool",
+            "title": "部门冗余分析",
+            "provider_name": "fde_data_tool",
+            "tool_name": "simulate_redundancy",
+            "tool_label": "FDE 裁员模拟",
+            "tool_parameters": {
+              "department_id": {
+                "type": "variable",
+                "value": "{{#start.department_id#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 380,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "llm-report",
+          "data": {
+            "type": "llm",
+            "title": "生成人机协作建议",
+            "model": {
+              "provider": "openai",
+              "name": "gpt-4o",
+              "mode": "chat",
+              "completion_params": {}
+            },
+            "prompt": "你是组织发展顾问。基于冗余分析（{{#tool-fde-redun.result#}}）为部门 {{#start.department_id#}} 生成建议报告：冗余概览、可优化岗位、风险评估、保守方案（优先人机协作而非直接裁员）、实施时间表。强调：最终决策须人工确认，系统内置防呆五步。",
+            "variables": [
+              {
+                "variable": "department_id",
+                "value_selector": [
+                  "start",
+                  "department_id"
+                ]
+              },
+              {
+                "variable": "raw",
+                "value_selector": [
+                  "tool-fde-redun",
+                  "result"
+                ]
+              }
+            ],
+            "vision": {
+              "enabled": false
+            }
+          },
+          "position": {
+            "x": 700,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "end",
+          "data": {
+            "type": "end",
+            "title": "输出",
+            "outputs": [
+              {
+                "value_selector": [
+                  "llm-report",
+                  "text"
+                ]
+              }
+            ],
+            "is_interrupt": false
+          },
+          "position": {
+            "x": 1020,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "tool-fde-redun",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e2",
+          "source": "tool-fde-redun",
+          "target": "llm-report",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e3",
+          "source": "llm-report",
+          "target": "end",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        }
+      ]
+    },
+    "environment_variables": [],
+    "conversation_variables": []
+  }
+}

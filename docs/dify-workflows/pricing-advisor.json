@@ -1,0 +1,199 @@
+{
+  "version": "0.1.2",
+  "kind": "app",
+  "app": {
+    "name": "智能定价建议",
+    "mode": "workflow",
+    "icon": "💰",
+    "icon_background": "#FFF4E5",
+    "description": "根据产品与策略目标，调用 FDE 定价引擎生成优化价格及决策说明。",
+    "use_icon_as_answer_icon": false
+  },
+  "workflow": {
+    "features": {
+      "tracing": "enabled",
+      "retry": {},
+      "file_upload": {
+        "image": {
+          "enabled": false
+        },
+        "enabled": false
+      }
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "data": {
+            "type": "start",
+            "title": "开始",
+            "variables": [
+              {
+                "variable": "product_id",
+                "type": "string",
+                "required": true,
+                "label": "产品ID"
+              },
+              {
+                "variable": "strategy",
+                "type": "string",
+                "required": false,
+                "label": "策略(rule_based/rl_based)"
+              }
+            ]
+          },
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-price",
+          "data": {
+            "type": "tool",
+            "title": "获取定价优化方案",
+            "provider_name": "fde_data_tool",
+            "tool_name": "optimize_price",
+            "tool_label": "FDE 定价优化",
+            "tool_parameters": {
+              "product_id": {
+                "type": "variable",
+                "value": "{{#start.product_id#}}"
+              },
+              "strategy": {
+                "type": "variable",
+                "value": "{{#start.strategy#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 380,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "llm-explain",
+          "data": {
+            "type": "llm",
+            "title": "生成定价决策说明",
+            "model": {
+              "provider": "openai",
+              "name": "gpt-4o",
+              "mode": "chat",
+              "completion_params": {}
+            },
+            "prompt": "你是定价策略顾问。基于 FDE 的优化结果（{{#tool-fde-price.result#}}）为产品 {{#start.product_id#}} 撰写一段面向管理层的决策说明：建议价格、预期收益、实施前提与风险。",
+            "variables": [
+              {
+                "variable": "product_id",
+                "value_selector": [
+                  "start",
+                  "product_id"
+                ]
+              },
+              {
+                "variable": "raw",
+                "value_selector": [
+                  "tool-fde-price",
+                  "result"
+                ]
+              }
+            ],
+            "vision": {
+              "enabled": false
+            }
+          },
+          "position": {
+            "x": 700,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "end",
+          "data": {
+            "type": "end",
+            "title": "输出",
+            "outputs": [
+              {
+                "value_selector": [
+                  "llm-explain",
+                  "text"
+                ]
+              }
+            ],
+            "is_interrupt": false
+          },
+          "position": {
+            "x": 1020,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "tool-fde-price",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e2",
+          "source": "tool-fde-price",
+          "target": "llm-explain",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e3",
+          "source": "llm-explain",
+          "target": "end",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        }
+      ]
+    },
+    "environment_variables": [],
+    "conversation_variables": []
+  }
+}

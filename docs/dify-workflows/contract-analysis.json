@@ -1,0 +1,192 @@
+{
+  "version": "0.1.2",
+  "kind": "app",
+  "app": {
+    "name": "合同智能分析",
+    "mode": "workflow",
+    "icon": "📄",
+    "icon_background": "#FFEAE8",
+    "description": "上传合同文本，AI 抽取关键条款与风险等级并自动归档到 FDE 知识库。",
+    "use_icon_as_answer_icon": false
+  },
+  "workflow": {
+    "features": {
+      "tracing": "enabled",
+      "retry": {},
+      "file_upload": {
+        "image": {
+          "enabled": false
+        },
+        "enabled": false
+      }
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "data": {
+            "type": "start",
+            "title": "开始",
+            "variables": [
+              {
+                "variable": "contract_text",
+                "type": "string",
+                "required": true,
+                "label": "合同文本"
+              },
+              {
+                "variable": "file_name",
+                "type": "string",
+                "required": false,
+                "label": "文件名"
+              }
+            ]
+          },
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "llm-extract",
+          "data": {
+            "type": "llm",
+            "title": "提取关键条款",
+            "model": {
+              "provider": "openai",
+              "name": "gpt-4o",
+              "mode": "chat",
+              "completion_params": {}
+            },
+            "prompt": "你是企业法务 AI。请阅读用户上传的合同文本（{{#start.contract_text#}}），抽取以下结构化字段并以 JSON 返回：\n parties(签约方), amount(金额), term(期限), penalty(违约条款),  jurisdiction(管辖), risk_level(高/中/低), risk_notes(风险点)。",
+            "variables": [
+              {
+                "variable": "contract_text",
+                "value_selector": [
+                  "start",
+                  "contract_text"
+                ]
+              }
+            ],
+            "vision": {
+              "enabled": false
+            }
+          },
+          "position": {
+            "x": 380,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-upload",
+          "data": {
+            "type": "tool",
+            "title": "归档到 FDE 知识库",
+            "provider_name": "fde_data_tool",
+            "tool_name": "upload_file",
+            "tool_label": "FDE 文件入库",
+            "tool_parameters": {
+              "file_name": {
+                "type": "variable",
+                "value": "{{#start.file_name#}}"
+              },
+              "content": {
+                "type": "variable",
+                "value": "{{#start.contract_text#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 700,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "end",
+          "data": {
+            "type": "end",
+            "title": "输出",
+            "outputs": [
+              {
+                "value_selector": [
+                  "llm-extract",
+                  "text"
+                ]
+              }
+            ],
+            "is_interrupt": false
+          },
+          "position": {
+            "x": 1020,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "llm-extract",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e2",
+          "source": "llm-extract",
+          "target": "tool-fde-upload",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e3",
+          "source": "tool-fde-upload",
+          "target": "end",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        }
+      ]
+    },
+    "environment_variables": [],
+    "conversation_variables": []
+  }
+}

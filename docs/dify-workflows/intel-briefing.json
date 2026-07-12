@@ -1,0 +1,238 @@
+{
+  "version": "0.1.2",
+  "kind": "app",
+  "app": {
+    "name": "情报简报生成",
+    "mode": "workflow",
+    "icon": "🛰️",
+    "icon_background": "#E8F5E9",
+    "description": "按主题采集外部情报，AI 生成结构化简报并存入 FDE 情报库。",
+    "use_icon_as_answer_icon": false
+  },
+  "workflow": {
+    "features": {
+      "tracing": "enabled",
+      "retry": {},
+      "file_upload": {
+        "image": {
+          "enabled": false
+        },
+        "enabled": false
+      }
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "data": {
+            "type": "start",
+            "title": "开始",
+            "variables": [
+              {
+                "variable": "topic",
+                "type": "string",
+                "required": true,
+                "label": "主题"
+              },
+              {
+                "variable": "sources",
+                "type": "string",
+                "required": false,
+                "label": "数据源(逗号分隔)"
+              }
+            ]
+          },
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-track",
+          "data": {
+            "type": "tool",
+            "title": "采集外部情报",
+            "provider_name": "fde_data_tool",
+            "tool_name": "track_intelligence",
+            "tool_label": "FDE 情报采集",
+            "tool_parameters": {
+              "topic": {
+                "type": "variable",
+                "value": "{{#start.topic#}}"
+              },
+              "sources": {
+                "type": "variable",
+                "value": "{{#start.sources#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 380,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "llm-brief",
+          "data": {
+            "type": "llm",
+            "title": "生成情报简报",
+            "model": {
+              "provider": "openai",
+              "name": "gpt-4o",
+              "mode": "chat",
+              "completion_params": {}
+            },
+            "prompt": "你是竞争情报分析师。基于采集到的情报（{{#tool-fde-track.result#}}）为「{{#start.topic#}}」撰写一份简报，包含：\n1. 关键动态 2. 影响评估 3. 行动建议 4. 风险提示。",
+            "variables": [
+              {
+                "variable": "topic",
+                "value_selector": [
+                  "start",
+                  "topic"
+                ]
+              },
+              {
+                "variable": "raw",
+                "value_selector": [
+                  "tool-fde-track",
+                  "result"
+                ]
+              }
+            ],
+            "vision": {
+              "enabled": false
+            }
+          },
+          "position": {
+            "x": 700,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-report",
+          "data": {
+            "type": "tool",
+            "title": "存档情报报告",
+            "provider_name": "fde_data_tool",
+            "tool_name": "generate_intel_report",
+            "tool_label": "FDE 报告存档",
+            "tool_parameters": {
+              "brief": {
+                "type": "variable",
+                "value": "{{#llm-brief.text#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 1020,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "end",
+          "data": {
+            "type": "end",
+            "title": "输出",
+            "outputs": [
+              {
+                "value_selector": [
+                  "llm-brief",
+                  "text"
+                ]
+              }
+            ],
+            "is_interrupt": false
+          },
+          "position": {
+            "x": 1340,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "tool-fde-track",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e2",
+          "source": "tool-fde-track",
+          "target": "llm-brief",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e3",
+          "source": "llm-brief",
+          "target": "tool-fde-report",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e4",
+          "source": "tool-fde-report",
+          "target": "end",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        }
+      ]
+    },
+    "environment_variables": [],
+    "conversation_variables": []
+  }
+}

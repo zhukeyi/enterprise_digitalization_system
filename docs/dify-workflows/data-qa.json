@@ -1,0 +1,189 @@
+{
+  "version": "0.1.2",
+  "kind": "app",
+  "app": {
+    "name": "企业数据问答",
+    "mode": "workflow",
+    "icon": "💬",
+    "icon_background": "#E0F7FF",
+    "description": "基于 FDE 已入库的企业数据（RAG）回答自然语言问题，标注来源。",
+    "use_icon_as_answer_icon": false
+  },
+  "workflow": {
+    "features": {
+      "tracing": "enabled",
+      "retry": {},
+      "file_upload": {
+        "image": {
+          "enabled": false
+        },
+        "enabled": false
+      }
+    },
+    "graph": {
+      "nodes": [
+        {
+          "id": "start",
+          "data": {
+            "type": "start",
+            "title": "开始",
+            "variables": [
+              {
+                "variable": "query",
+                "type": "string",
+                "required": true,
+                "label": "问题"
+              }
+            ]
+          },
+          "position": {
+            "x": 80,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "tool-fde-ask",
+          "data": {
+            "type": "tool",
+            "title": "检索 FDE 知识库",
+            "provider_name": "fde_data_tool",
+            "tool_name": "ask_data",
+            "tool_label": "FDE 智能检索",
+            "tool_parameters": {
+              "query": {
+                "type": "variable",
+                "value": "{{#start.query#}}"
+              }
+            },
+            "params": {}
+          },
+          "position": {
+            "x": 380,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "llm-answer",
+          "data": {
+            "type": "llm",
+            "title": "生成自然语言回答",
+            "model": {
+              "provider": "openai",
+              "name": "gpt-4o",
+              "mode": "chat",
+              "completion_params": {}
+            },
+            "prompt": "基于 FDE 检索结果回答用户问题。\n问题：{{#start.query#}}\n检索上下文：{{#tool-fde-ask.result#}}\n要求：只使用上下文事实，标注来源，不确定时明确说明。",
+            "variables": [
+              {
+                "variable": "query",
+                "value_selector": [
+                  "start",
+                  "query"
+                ]
+              },
+              {
+                "variable": "ctx",
+                "value_selector": [
+                  "tool-fde-ask",
+                  "result"
+                ]
+              }
+            ],
+            "vision": {
+              "enabled": false
+            }
+          },
+          "position": {
+            "x": 700,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        },
+        {
+          "id": "end",
+          "data": {
+            "type": "end",
+            "title": "输出",
+            "outputs": [
+              {
+                "value_selector": [
+                  "llm-answer",
+                  "text"
+                ]
+              }
+            ],
+            "is_interrupt": false
+          },
+          "position": {
+            "x": 1020,
+            "y": 200
+          },
+          "width": 244,
+          "height": 118,
+          "selected": false,
+          "dragging": false,
+          "sourcePosition": "right",
+          "targetPosition": "left"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "start",
+          "target": "tool-fde-ask",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e2",
+          "source": "tool-fde-ask",
+          "target": "llm-answer",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        },
+        {
+          "id": "e3",
+          "source": "llm-answer",
+          "target": "end",
+          "sourceHandle": "source",
+          "targetHandle": "target",
+          "type": "custom",
+          "data": {
+            "sourceType": "",
+            "targetType": ""
+          }
+        }
+      ]
+    },
+    "environment_variables": [],
+    "conversation_variables": []
+  }
+}
