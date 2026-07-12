@@ -5,6 +5,7 @@
       <nav class="nav">
         <RouterLink to="/" class="nav-link">总览</RouterLink>
         <RouterLink to="/employees" class="nav-link">员工</RouterLink>
+        <RouterLink to="/simulator" class="nav-link">裁员模拟</RouterLink>
       </nav>
     </header>
     <main class="content"><RouterView /></main>

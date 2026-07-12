@@ -1,17 +1,35 @@
 openapi: "3.0.3"
 info:
-  title: FDE AI Platform — Data Ingestion & RAG API
+  title: FDE AI Platform — Unified API (V5)
   description: |
-    FDE AI Platform 的数据接入与智能检索 API，可在 Dify 中作为 Custom Tool 导入。
+    FDE AI Platform 的统一 API，可在 Dify 中作为 Custom Tool 导入。
 
     **可用工具（导入后 Dify 自动生成工具节点）：**
+
+    基础能力：
     1. `upload_file` — 上传文件自动解析入库（支持 xlsx/csv/pdf/docx/pptx）
     2. `ask_data` — 自然语言检索已入库数据（RAG 问答）
     3. `get_task_status` — 查询异步入库任务状态
 
+    情报（V5-④）：
+    4. `track_intelligence` — 触发外部情报采集
+    5. `generate_intel_report` — 获取情报总览与趋势
+
+    营销（V5-⑤）：
+    6. `optimize_geo_content` — 生成 GEO 优化内容
+    7. `generate_ad_variants` — 生成多变体广告文案
+
+    HR（V5-⑥）：
+    8. `assess_ai_replacement` — 员工风险评估
+    9. `simulate_redundancy` — 部门冗余分析
+
+    定价（V5-⑦）：
+    10. `optimize_price` — 给定产品输出最优定价
+    11. `simulate_pricing` — What-if 定价模拟
+
     **接入外部系统数据（连接器）：** 除文件上传外，FDE 还支持通过连接器接入
     数据库、API、消息系统等外部数据源。详情见 FDE 连接器管理页。
-  version: "4.0.0"
+  version: "5.0.0"
   contact:
     name: FDE AI Platform
 servers:
@@ -149,6 +167,371 @@ paths:
         enabled: true
         name: 任务状态
         description: 查询异步入库任务的进度和结果
+
+  /api/intelligence/collect:
+    post:
+      operationId: track_intelligence
+      summary: 触发外部情报采集
+      description: |
+        触发一次数据采集，从 RSS / HTTP / API 数据源抓取外部情报。
+        采集后自动执行去重、实体识别、分类打标、情感分析。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_type:
+                  type: string
+                  description: "数据源类型：rss / http / api"
+                  default: "rss"
+                query:
+                  type: string
+                  description: 搜索关键词
+                  default: ""
+                url:
+                  type: string
+                  description: 指定数据源 URL（可选）
+                  default: ""
+                max_items:
+                  type: integer
+                  description: 最大采集条数
+                  default: 20
+      responses:
+        "200":
+          description: 采集结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  items_collected:
+                    type: integer
+                  error:
+                    type: string
+      x-dify:
+        enabled: true
+        name: 情报采集
+        description: 从外部数据源采集竞争情报、行业新闻和社交媒体动态
+
+  /api/intelligence/overview:
+    get:
+      operationId: generate_intel_report
+      summary: 获取情报总览与趋势
+      description: |
+        获取情报中心总览数据，包括条目总数、数据源数、情感分布、7 日趋势和最近条目。
+        可用于在 Dify 工作流中生成情报摘要报告。
+      responses:
+        "200":
+          description: 情报总览
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_items:
+                    type: integer
+                  total_sources:
+                    type: integer
+                  sentiment_distribution:
+                    type: object
+                  trend_7d:
+                    type: array
+                  recent_items:
+                    type: array
+      x-dify:
+        enabled: true
+        name: 情报总览
+        description: 获取外部情报的统计数据和趋势摘要
+
+  /api/marketing/content/geo:
+    post:
+      operationId: optimize_geo_content
+      summary: 生成 GEO 优化内容
+      description: |
+        针对指定品牌和主题，生成 GEO（生成式引擎优化）内容。
+        输出包含 E-E-A-T 评分、引用友好度评分和结构化内容，
+        让 AI 搜索引擎（ChatGPT/Perplexity/Bing 等）更可能引用品牌内容。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - brand
+                - topic
+              properties:
+                brand:
+                  type: string
+                  description: 品牌名称
+                topic:
+                  type: string
+                  description: 内容主题
+                area:
+                  type: string
+                  description: 地域（可选）
+      responses:
+        "200":
+          description: GEO 内容生成结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title:
+                    type: string
+                  body:
+                    type: string
+                  eeat_score:
+                    type: number
+                  citation_score:
+                    type: number
+                  geo_optimized:
+                    type: boolean
+      x-dify:
+        enabled: true
+        name: GEO 内容优化
+        description: 生成让 AI 搜索引擎引用的 GEO 优化内容，含 E-E-A-T 评分
+
+  /api/marketing/ads/generate:
+    post:
+      operationId: generate_ad_variants
+      summary: 生成多变体广告文案
+      description: |
+        针对指定品牌和主题，批量生成广告文案变体。
+        每个变体含标题、正文、CTA 和质量评分，支持 A/B 测试。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - brand
+                - topic
+              properties:
+                brand:
+                  type: string
+                  description: 品牌名称
+                topic:
+                  type: string
+                  description: 广告主题
+                area:
+                  type: string
+                  description: 投放地域（可选）
+                n_variants:
+                  type: integer
+                  description: 生成变体数
+                  default: 5
+      responses:
+        "200":
+          description: 广告变体列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  variants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        headline:
+                          type: string
+                        body:
+                          type: string
+                        cta:
+                          type: string
+                        quality_score:
+                          type: number
+      x-dify:
+        enabled: true
+        name: 广告多变体
+        description: 批量生成广告文案变体，含质量评分，支持 A/B 测试
+
+  /api/hr/risk/{employee_id}:
+    post:
+      operationId: assess_ai_replacement
+      summary: 员工风险评估
+      description: |
+        评估员工的风险等级，从 4 个维度分析：离职风险、合规风险、绩效风险、能力缺口。
+        输出风险评分、风险等级和改善建议。
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 员工 ID
+      responses:
+        "200":
+          description: 风险评估结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employee_id:
+                    type: string
+                  overall_risk:
+                    type: string
+                  dimensions:
+                    type: object
+                  recommendations:
+                    type: array
+                    items:
+                      type: string
+        "404":
+          description: 员工不存在
+      x-dify:
+        enabled: true
+        name: HR 风险评估
+        description: 评估员工的离职/合规/绩效/能力风险，输出改善建议
+
+  /api/hr/redundancy/{department_id}:
+    post:
+      operationId: simulate_redundancy
+      summary: 部门冗余分析
+      description: |
+        分析指定部门的人员冗余情况，输出冗余率、可优化岗位、预计节省成本和风险影响。
+        系统内置防呆 5 步校验（可逆性→影响范围→通俗解释→二次确认→快照）。
+      parameters:
+        - name: department_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 部门 ID
+      responses:
+        "200":
+          description: 冗余分析结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  department_id:
+                    type: string
+                  redundancy_rate:
+                    type: number
+                  optimizable_positions:
+                    type: array
+                  estimated_savings:
+                    type: number
+                  risk_level:
+                    type: string
+        "404":
+          description: 部门不存在
+      x-dify:
+        enabled: true
+        name: 裁员模拟
+        description: 分析部门冗余并模拟裁员方案，含防呆 5 步校验
+
+  /api/pricing/optimize/{product_id}:
+    post:
+      operationId: optimize_price
+      summary: 给定产品输出最优定价
+      description: |
+        基于需求预测、价格弹性估算和竞品定位，输出最优定价建议。
+        支持多种策略：rl_optimal（RL 优化）、cost_plus（成本加成）、
+        competitor_follow（竞品跟随）、psychological（心理定价）、tiered（阶梯定价）。
+      parameters:
+        - name: product_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 产品 ID
+        - name: strategy
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "rl_optimal"
+          description: "定价策略：rl_optimal / cost_plus / competitor_follow / psychological / tiered"
+      responses:
+        "200":
+          description: 定价建议
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product_id:
+                    type: string
+                  current_price:
+                    type: number
+                  recommended_price:
+                    type: number
+                  expected_profit_change:
+                    type: number
+                  strategy:
+                    type: string
+        "404":
+          description: 产品不存在
+      x-dify:
+        enabled: true
+        name: 最优定价
+        description: 基于需求预测和弹性估算输出产品最优定价建议
+
+  /api/pricing/simulate:
+    post:
+      operationId: simulate_pricing
+      summary: What-if 定价模拟
+      description: |
+        模拟调整价格后的销量、营收和利润变化（What-if 分析）。
+        输入产品 ID、新价格和可选竞品价格，输出对比预测。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+                - new_price
+              properties:
+                product_id:
+                  type: string
+                  description: 产品 ID
+                new_price:
+                  type: number
+                  description: 模拟的新价格
+                competitor_price:
+                  type: number
+                  description: 竞品价格（可选）
+      responses:
+        "200":
+          description: 模拟结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product_id:
+                    type: string
+                  current_price:
+                    type: number
+                  new_price:
+                    type: number
+                  predicted_demand:
+                    type: number
+                  predicted_revenue:
+                    type: number
+                  predicted_profit:
+                    type: number
+                  demand_change_pct:
+                    type: number
+                  profit_change_pct:
+                    type: number
+      x-dify:
+        enabled: true
+        name: 定价模拟
+        description: What-if 定价模拟，预测调价后的销量/营收/利润变化
 
   /health:
     get:

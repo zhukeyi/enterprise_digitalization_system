@@ -59,3 +59,13 @@ export async function getTrends(days = 7): Promise<TrendItem[]> {
   const { data } = await client.get<TrendItem[]>(`/api/intelligence/trends?days=${days}`)
   return data
 }
+
+export async function collectIntelligence(params: {
+  source_type?: string
+  query?: string
+  url?: string
+  max_items?: number
+}): Promise<{ success: boolean; items_collected: number; error?: string; items?: IntelItem[] }> {
+  const { data } = await client.post('/api/intelligence/collect', params)
+  return data
+}

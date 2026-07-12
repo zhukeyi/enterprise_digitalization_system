@@ -10,6 +10,13 @@
         <span class="logo-sub">情报中心</span>
       </div>
       <div class="status-bar">
+        <nav class="nav-links">
+          <RouterLink to="/" class="nav-link">总览</RouterLink>
+          <RouterLink to="/sources" class="nav-link">数据源</RouterLink>
+          <RouterLink to="/trends" class="nav-link">趋势</RouterLink>
+          <RouterLink to="/reports" class="nav-link">报告</RouterLink>
+          <RouterLink to="/alerts" class="nav-link">预警</RouterLink>
+        </nav>
         <span class="status-dot online" />
         <span class="status-text">LIVE</span>
         <span class="clock" id="clock">{{ clockText }}</span>
@@ -98,6 +105,32 @@ export default {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 4px;
+  margin-right: 16px;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-link:hover {
+  color: var(--accent);
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.nav-link.router-link-active {
+  color: var(--accent);
+  background: rgba(0, 212, 255, 0.12);
+  text-shadow: 0 0 8px var(--accent-glow);
 }
 .status-dot {
   width: 8px;
