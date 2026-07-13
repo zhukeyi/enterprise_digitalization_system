@@ -16,6 +16,7 @@
           <RouterLink to="/trends" class="nav-link">趋势</RouterLink>
           <RouterLink to="/reports" class="nav-link">报告</RouterLink>
           <RouterLink to="/alerts" class="nav-link">预警</RouterLink>
+          <RouterLink to="/customs" class="nav-link">海关数据</RouterLink>
         </nav>
         <span class="status-dot online" />
         <span class="status-text">LIVE</span>

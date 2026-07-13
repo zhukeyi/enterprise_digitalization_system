@@ -16,12 +16,14 @@ from __future__ import annotations
 
 from agents.data_agent.scrapers.api_scraper import APIScraper
 from agents.data_agent.scrapers.base import BaseScraper, ScraperRegistry
+from agents.data_agent.scrapers.customs_scraper import CustomsScraper
 from agents.data_agent.scrapers.http_scraper import HTTPScraper
 from agents.data_agent.scrapers.rss_scraper import RSSScraper
 
 __all__ = [
     "APIScraper",
     "BaseScraper",
+    "CustomsScraper",
     "HTTPScraper",
     "RSSScraper",
     "ScraperRegistry",

@@ -92,6 +92,7 @@ Thumbs.db
 models/
 data/raw/
 data/processed/
+agents/data_agent/data/
 vector_db/
 
 # ── Logs ───────────────────────────────────────────────────────────

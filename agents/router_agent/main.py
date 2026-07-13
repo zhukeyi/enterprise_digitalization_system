@@ -142,6 +142,16 @@ try:
 except ImportError:
     logger.warning("Data agent router unavailable — /api/intelligence endpoints disabled")
 
+# ── Customs data router (P1-C, C-6 backend) ─────────────────────
+
+try:
+    from agents.data_agent.customs_router import router as customs_router
+
+    app.include_router(customs_router)
+    logger.info("Customs data router registered at /api/customs/*")
+except ImportError:
+    logger.warning("Customs data router unavailable — /api/customs endpoints disabled")
+
 # ── HR Router (V5-⑥ HR 智能评估) ─────────────────────────────
 
 try:

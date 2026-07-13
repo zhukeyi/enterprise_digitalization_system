@@ -40,7 +40,20 @@ from agents.data_agent.models import (
 
 logger = logging.getLogger("fde.data.geo_guard")
 
-__all__ = ["DEFAULT_GEO_THRESHOLD", "GEOGuard", "assess_geo_risk"]
+# Compliance extensions (P1-C C-5): sanctions + enterprise outreach + unsubscribe
+__all__ = [
+    "DEFAULT_GEO_THRESHOLD",
+    "ComplianceDecision",
+    "GEOGuard",
+    "OutreachComplianceGate",
+    "SanctionHit",
+    "SanctionsGuard",
+    "SanctionsScreenResult",
+    "append_unsubscribe_footer",
+    "assess_geo_risk",
+    "enterprise_outreach_allowed",
+    "screen_sanctions",
+]
 
 DEFAULT_GEO_THRESHOLD = 0.6
 
@@ -613,3 +626,21 @@ def get_geo_guard() -> GEOGuard:
 def assess_geo_risk(item: CollectedItem | CleanedItem) -> GEORiskReport:
     """Convenience: assess GEO risk using the default guard."""
     return get_geo_guard().assess(item)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Compliance extensions (P1-C C-5): sanctions + enterprise outreach + unsubscribe
+# ────────────────────────────────────────────────────────────────
+# These re-export the customs-marketing compliance primitives so that the
+# whole data→marketing compliance surface is reachable from geo_guard.
+
+from agents.data_agent.compliance_guard import (  # noqa: E402
+    ComplianceDecision,
+    OutreachComplianceGate,
+    SanctionHit,
+    SanctionsGuard,
+    SanctionsScreenResult,
+    append_unsubscribe_footer,
+    enterprise_outreach_allowed,
+    screen_sanctions,
+)

@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Customs data source registry (P1-C)
+# Layered registry consumed by CustomsScraper via config.metadata["provider"].
+# Each entry documents access method, cost, license commercializability, and the
+# compliance flags that gate downstream marketing use.
+#
+# RED LINES (see docs/customs-compliance-checklist.md):
+#   R1 redistribution  — Tier-2 raw BOL must never be re-shipped; deliver derivative only
+#   R2 privacy/antispam — enterprise channel only; unsubscribe required
+#   R3 sanctions       — screen every buyer before outreach (OFAC/EU)
+# ─────────────────────────────────────────────────────────────────────────────
+
+tier1_statistical:
+  # Official statistical customs data — globally available, NO buyer name.
+  description: >-
+    Official statistical trade data. Covers 200+ reporting countries
+    (UN Comtrade ≈ 99% of world merchandise trade). Contains HS category,
+    partner country, port, value, quantity. Buyer/importer name is confidential.
+  license_commercializable: true
+  contains_buyer_name: false
+  access: api_or_csv
+  sources:
+    - id: un_comtrade
+      display_name: UN Comtrade (API v1)
+      base_url: https://comtradeapi.un.org/public/v1/get/HS
+      auth: subscription_key_or_token
+      cost: free_tier_api_key
+      fields: [hs_code, hs_description, reporter_country, partner_country, value_usd, quantity, year]
+      notes: >-
+        Port-level not provided by the aggregate API; port detail comes from
+        national portals / Tier-2. Use reporter+partner+HS for global coverage.
+      compliance_flags: [r3_sanctions_screen_recommended]
+    - id: us_census_api
+      display_name: US Census Bureau FTZ / API
+      base_url: https://api.census.gov/data/timeseries/intltrade/imports/enduse
+      auth: api_key
+      cost: free
+      fields: [hs_code, country, value_usd, quantity]
+      notes: Complements Comtrade for US imports granularity.
+      compliance_flags: [r3_sanctions_screen_recommended]
+    - id: eu_comext
+      display_name: Eurostat Comext
+      base_url: https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/
+      auth: none
+      cost: free
+      fields: [hs_code, partner, value_eur, quantity]
+      notes: EU member-state external trade.
+      compliance_flags: [r3_sanctions_screen_recommended]
+    - id: br_comexstat
+      display_name: Brazil Comex Stat
+      base_url: https://api-comexstat.mdic.gov.br/
+      auth: none
+      cost: free
+      fields: [hs_code, country, value_usd, quantity]
+      compliance_flags: [r3_sanctions_screen_recommended]
+    - id: in_indiantrade
+      display_name: India Trade (DGFT / MPEDA)
+      base_url: https://commerce-app.gov.in/eidb/
+      auth: none
+      cost: free
+      fields: [hs_code, country, value_usd]
+      compliance_flags: [r3_sanctions_screen_recommended]
+
+tier2_bol:
+  # Bill-of-lading data — contains buyer name, redistribution-restricted.
+  description: >-
+    Bill-of-lading (BOL) data. Contains Shipper/Consignee/Notify/port/HS/weight.
+    Buyer-level (the only source of "采购商"). NOT globally available and subject
+    to redistribution licensing. Deliver ONLY derivative BuyerEntity profiles.
+  license_commercializable: conditional
+  contains_buyer_name: true
+  access: api_or_scrape
+  redistribution_note: >-
+    Panjiva / ImportGenius / Volza terms forbid raw-record redistribution.
+    Product must expose derived intelligence (category x port x frequency scoring),
+    never the source rows. Acquire an enterprise redistribution license to expand.
+  sources:
+    - id: importyeti
+      display_name: ImportYeti (US, free tier)
+      base_url: https://www.importyeti.com/
+      auth: none
+      cost: free_tier_limited
+      country_scope: [US]
+      fields: [shipper, consignee, notify, port_of_loading, port_of_discharge, hs_code, weight_kg]
+      notes: >-
+        Free tier is HTML/scrape-based and best-effort. Consignee-level US imports.
+        No redistribution of raw rows — derivative only.
+      compliance_flags: [r1_redistribution_derivative_only, r2_enterprise_channel, r3_sanctions]
+    - id: zauba
+      display_name: Zauba (India, free tier)
+      base_url: https://www.zauba.com/
+      auth: none
+      cost: free_tier_limited
+      country_scope: [IN]
+      fields: [shipper, consignee, notify, port_of_loading, port_of_discharge, hs_code, weight_kg]
+      notes: Indian import/export BOL, free tier is HTML/scrape-based.
+      compliance_flags: [r1_redistribution_derivative_only, r2_enterprise_channel, r3_sanctions]
+    - id: volza
+      display_name: Volza (paid, multi-country)
+      base_url: https://www.volza.com/
+      auth: api_key
+      cost: paid_annual_license
+      country_scope: [IN, VN, PK, PE, CO, CL, CR]
+      fields: [shipper, consignee, notify, port_of_loading, port_of_discharge, hs_code, weight_kg]
+      notes: Requires enterprise redistribution license before any marketing use.
+      compliance_flags: [r1_redistribution_license, r2_enterprise_channel, r3_sanctions]
+    - id: importgenius
+      display_name: ImportGenius (paid, multi-country)
+      base_url: https://www.importgenius.com/
+      auth: api_key
+      cost: paid_annual_license
+      country_scope: [US, MX, BR, CO, PA, CN]
+      fields: [shipper, consignee, notify, port_of_loading, port_of_discharge, hs_code, weight_kg]
+      notes: Requires enterprise redistribution license before any marketing use.
+      compliance_flags: [r1_redistribution_license, r2_enterprise_channel, r3_sanctions]

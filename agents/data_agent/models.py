@@ -41,6 +41,7 @@ class SourceType(StrEnum):
     WEB = "web"
     RSS = "rss"
     API = "api"
+    CUSTOMS = "customs"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -67,6 +68,10 @@ class SourceConfig(BaseModel):
     )
     max_items: int = Field(default=50, ge=1, le=500, description="Max items to collect")
     headers: dict[str, str] = Field(default_factory=dict, description="Custom HTTP headers")
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Provider/adapter metadata (e.g. provider, reporter, year, hsCode)",
+    )
 
 
 class CollectedItem(BaseModel):
