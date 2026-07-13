@@ -3,7 +3,6 @@
 > 以 **LangGraph 多智能体编排** 为核心、**企业 RAG（Qdrant + ONNX 嵌入）** 为知识底座、**Dify** 为应用编排层的可私有化部署企业级 AI 数字化平台。已完成 V4 工程底座与 V5「企业落地七步法」商业化交付，并内置 **全系统运行监测平台**。
 
 - 仓库：`git@github.com:zhukeyi/enterprise_digitalization_system.git`（分支 `main`，Trunk-Based 开发）
-- 生产环境：`https://217.142.246.70:8443`（Oracle ARM 实例，自签名证书，systemd + nginx 托管）
 - 代码规模：**16 个后端智能体 + 9 个前端门户**，全量测试 **1227 个**
 - 商业交付审计达成度：**~95%**（V5 P0/P1/P2 共 10 项缺口已全部闭合）
 
