@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from agents.router_agent.tenant.litellm_keys import LiteLLMKeyClient, LiteLLMKeyError
-from agents.router_agent.tenant.models import SubscriptionTier, Tenant
+from agents.router_agent.tenant.models import SubscriptionTier, Tenant, TenantKey
 from agents.router_agent.tenant.store import TenantStore
 
 # ── Tenant model ────────────────────────────────────────────────
@@ -114,8 +114,24 @@ async def test_key_client_generate_parses_response():
     assert captured["auth"] == "Bearer master"
     assert key.key_id == "tok_abc"
     assert key.virtual_key_masked == "sk-...cret"
+    assert key.raw_key == "sk-litellm-rawsecret"  # one-time secret captured
     assert key.tenant_id == t.tenant_id
+    # raw_key must never leak through serialization
+    assert "raw_key" not in key.model_dump()
     await c.aclose()
+
+
+def test_tenant_key_model_dump_excludes_raw_key():
+    k = TenantKey(
+        key_id="kid1",
+        tenant_id="tnt_x",
+        virtual_key_masked="sk-...abcd",
+        budget_usd=5.0,
+        raw_key="sk-super-secret",
+    )
+    dumped = k.model_dump()
+    assert "raw_key" not in dumped
+    assert dumped["virtual_key_masked"] == "sk-...abcd"
 
 
 async def test_key_client_delete():

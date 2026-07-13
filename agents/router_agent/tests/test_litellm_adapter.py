@@ -151,3 +151,43 @@ async def test_complete_raises_on_unconfigured():
     a = LiteLLMAdapter(proxy_url="")
     with pytest.raises(LiteLLMAdapterError):
         await a.complete(_req())
+
+
+# ── Structural conformance to BaseAdapter contract (D5) ──────────
+# The adapter is duck-typed (does NOT subclass BaseAdapter) to avoid import
+# churn. This test guards against silent contract drift: if BaseAdapter's
+# interface changes, this must fail loudly.
+
+
+def test_adapter_conforms_to_base_adapter_contract():
+
+    a = LiteLLMAdapter(proxy_url="http://litellm:4000", api_key="m")
+
+    # Required attributes present (class-level interface fields)
+    for attr in ("model_name", "provider", "cost_per_1k_tokens", "supports_streaming", "max_tokens"):
+        assert hasattr(a, attr), f"missing interface attr: {attr}"
+
+    # Required methods present and with correct shape
+    assert callable(a.complete)
+    import asyncio
+
+    assert asyncio.iscoroutinefunction(a.complete)
+    assert callable(a.health_check)
+    assert isinstance(a.full_name, str) and a.full_name
+
+    # Must satisfy BaseAdapter.register (duck-typed acceptance): register
+    # accepts any object exposing full_name + complete, and aliases resolve.
+    from agents.router_agent.adapters.base import ModelRegistry
+
+    reg2 = ModelRegistry()
+    reg2.register(a, aliases=["fde-default"])
+    assert reg2.get("fde-default") is a
+    assert reg2.get(a.full_name) is a
+
+
+async def test_auth_for_prefers_virtual_key_over_master():
+    a = LiteLLMAdapter(proxy_url="http://litellm:4000", api_key="master-key")
+    # virtual key present -> wins
+    assert a._auth_for(_req(extra={"litellm_key": "vk-123"})) == "vk-123"
+    # no virtual key -> falls back to configured master key
+    assert a._auth_for(_req()) == "master-key"

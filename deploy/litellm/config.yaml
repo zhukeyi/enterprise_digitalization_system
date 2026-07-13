@@ -14,8 +14,10 @@ general_settings:
   # Master key for the proxy's own admin API (/key/generate etc.)
   # Falls back to env LITELLM_MASTER_KEY if unset here.
   master_key: os.environ/LITELLM_MASTER_KEY
-  # Local in-memory store for keys (no Postgres needed on single host).
-  store: "local"
+  # Virtual keys require a relational store. LiteLLM 1.93.0 rejects SQLite,
+  # so this MUST be a PostgreSQL URL (provided via env in both the standalone
+  # host deploy and docker-compose.prod.yml).
+  database_url: os.environ/DATABASE_URL
   # Disable telemetry to keep the deployment self-contained.
   telemetry: false
 
@@ -51,12 +53,17 @@ model_list:
       custom_llm_provider: deepseek
       api_key: os.environ/DEEPSEEK_API_KEY
 
-  # fde-premium (zhipu/glm-4-flash) — disabled: zhipu provider absent in image.
-  # - model_name: fde-premium
-  #   litellm_params:
-  #     model: glm-4-flash
-  #     custom_llm_provider: zhipu
-  #     api_key: os.environ/GLM_API_KEY
+  # fde-premium — zhipu/glm-4-flash provider is ABSENT in litellm:main-latest
+  # (1.93.0), so we register it as a working stand-in (qwen-max / dashscope)
+  # until a LiteLLM image that ships the zhipu module is used. This keeps the
+  # ADDON/ENTERPRISE tier model allowlist (which references fde-premium) valid
+  # for virtual-key generation; swap the model below when zhipu becomes
+  # available. FDE's own glm-4-flash still runs via the backend adapter.
+  - model_name: fde-premium
+    litellm_params:
+      model: qwen-max
+      custom_llm_provider: dashscope
+      api_key: os.environ/QWEN_API_KEY
 
   - model_name: fde-frontier
     litellm_params:

@@ -314,13 +314,30 @@ fallback_chain = FallbackChain(model_registry)
 # Registered ONLY when LITELLM_PROXY_URL is configured; otherwise it stays
 # invisible to /v1/models and the fallback chain, leaving the legacy
 # Mock/Stub adapters as the active path (risk R1 mitigation).
+#
+# When enabled, the single adapter instance is also registered under the
+# LiteLLM model aliases (fde-economy / fde-default / fde-frontier / fde-premium)
+# so that clients requesting those model names are routed through the proxy
+# transparently — no caller-side changes required.
 try:
     from agents.router_agent.adapters.litellm_adapter import build_litellm_adapter
 
     _litellm_adapter = build_litellm_adapter()
     if _litellm_adapter is not None:
-        model_registry.register(_litellm_adapter)
-        logger.info("LiteLLM adapter registered as %s", _litellm_adapter.full_name)
+        _litellm_aliases = [
+            a.strip()
+            for a in os.getenv(
+                "LITELLM_MODEL_ALIASES",
+                "fde-economy,fde-default,fde-frontier,fde-premium",
+            ).split(",")
+            if a.strip()
+        ]
+        model_registry.register(_litellm_adapter, aliases=_litellm_aliases)
+        logger.info(
+            "LiteLLM adapter registered as %s (aliases=%s)",
+            _litellm_adapter.full_name,
+            _litellm_aliases,
+        )
 except Exception as e:  # pragma: no cover - defensive
     logger.warning("LiteLLM adapter registration skipped: %s", e)
 

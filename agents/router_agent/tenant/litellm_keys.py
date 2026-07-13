@@ -76,11 +76,17 @@ class LiteLLMKeyClient:
         if not self.enabled:
             raise LiteLLMKeyError("LiteLLM proxy URL / master key not configured")
 
+        # Rate limiting: tenant.rpm_limit is *requests per minute* — map it to
+        # LiteLLM's ``rpm_limit`` (not ``max_parallel_requests``, which is a
+        # concurrency cap). We also set a modest concurrency cap to stop a
+        # single tenant from saturating the proxy.
+        concurrency = min(max(tenant.rpm_limit, 1), 20)
         payload = {
             "key_alias": f"fde-{tenant.tenant_id}",
             "spend": tenant.budget_usd,
-            "models": tenant.model_allowlist,
-            "max_parallel_requests": tenant.rpm_limit,
+            "models": list(tenant.model_allowlist),
+            "rpm_limit": tenant.rpm_limit,
+            "max_parallel_requests": concurrency,
             "metadata": tenant_to_litellm_metadata(tenant),
         }
         url = f"{self.proxy_url}/key/generate"
@@ -104,6 +110,7 @@ class LiteLLMKeyClient:
             virtual_key_masked=mask_key(raw_key),
             budget_usd=tenant.budget_usd,
             models=list(tenant.model_allowlist),
+            raw_key=raw_key,  # returned once to the caller; excluded from dumps
             status="active",
         )
 

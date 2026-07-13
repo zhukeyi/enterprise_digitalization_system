@@ -78,6 +78,13 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - FDE_OTEL_ENABLED=${FDE_OTEL_ENABLED:-0}
+      # ── P0-A/P0-B: LiteLLM gateway (gray rollout) ──
+      # Set to the proxy URL to route real traffic through the gateway. In
+      # this compose stack the litellm service is always present, so the
+      # adapter registers and answers fde-* model aliases transparently.
+      - LITELLM_PROXY_URL=http://litellm:4000
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - LITELLM_MODEL_ALIASES=fde-economy,fde-default,fde-frontier,fde-premium
       - WECOM_CORP_ID=${WECOM_CORP_ID:-}
       - WECOM_AGENT_ID=${WECOM_AGENT_ID:-}
       - WECOM_APP_SECRET=${WECOM_APP_SECRET:-}
@@ -288,6 +295,78 @@ services:
     networks:
       - fde-network
 
+  # ── LiteLLM Gateway (P0-A / P0-B) ─────────────────────────────
+  # Unified model gateway: 100+ providers, virtual keys, per-tenant budget,
+  # cost tracking, fallback. FDE's router_agent delegates model execution
+  # here when LITELLM_PROXY_URL is set (gray rollout).
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: fde-litellm-prod
+    expose:
+      - "4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Dedicated Postgres for virtual keys (LiteLLM 1.93.0 rejects SQLite).
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-postgres:5432/litellm
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      GLM_API_KEY: ${GLM_API_KEY}
+      QWEN_API_KEY: ${QWEN_API_KEY}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    depends_on:
+      litellm-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "30m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+          cpus: "1"
+    networks:
+      - fde-network
+
+  litellm-postgres:
+    image: postgres:16-alpine
+    container_name: fde-litellm-postgres-prod
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD}
+      POSTGRES_DB: litellm
+    volumes:
+      - litellm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    networks:
+      - fde-network
+
 # ══════════════════════════════════════════════════════════════════
 # Volumes
 # ══════════════════════════════════════════════════════════════════
@@ -303,6 +382,7 @@ volumes:
   frontend_dist:
   prometheus_data:
   grafana_data:
+  litellm_postgres_data:
 
 # ══════════════════════════════════════════════════════════════════
 # Network

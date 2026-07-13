@@ -182,16 +182,27 @@ class ModelRegistry:
 
     def __init__(self) -> None:
         self._adapters: dict[str, BaseAdapter] = {}
+        self._aliases: dict[str, str] = {}  # alias -> canonical full_name
 
-    def register(self, adapter: BaseAdapter) -> None:
-        """Register an adapter instance."""
+    def register(self, adapter: BaseAdapter, aliases: list[str] | None = None) -> None:
+        """Register an adapter instance.
+
+        ``aliases`` lets an adapter answer to additional model names (used by
+        the LiteLLM gray-rollout: one adapter instance answers ``fde-default``,
+        ``fde-economy``, ``fde-frontier`` so existing client model names route
+        through the proxy without touching calling code).
+        """
         self._adapters[adapter.full_name] = adapter
-        logger.debug("Registered adapter: %s", adapter.full_name)
+        for alias in aliases or []:
+            self._aliases[alias] = adapter.full_name
+        logger.debug("Registered adapter: %s (aliases=%s)", adapter.full_name, aliases or [])
 
     def get(self, name: str) -> BaseAdapter | None:
-        """Get adapter by full name or model name prefix match."""
+        """Get adapter by full name, alias, or model name prefix match."""
         if name in self._adapters:
             return self._adapters[name]
+        if name in self._aliases:
+            return self._adapters[self._aliases[name]]
 
         # Prefix match (e.g., "deepseek" matches "deepseek/deepseek-chat")
         for full_name, adapter in self._adapters.items():
@@ -201,11 +212,11 @@ class ModelRegistry:
         return None
 
     def list_models(self) -> list[str]:
-        """List all registered model names."""
-        return list(self._adapters.keys())
+        """List all registered model names (canonical + aliases)."""
+        return list(self._adapters.keys()) + list(self._aliases.keys())
 
     def get_available(self) -> list[BaseAdapter]:
-        """Get all adapters that pass health check."""
+        """Get all adapters that pass health check (canonical only)."""
         available = []
         for adapter in self._adapters.values():
             try:

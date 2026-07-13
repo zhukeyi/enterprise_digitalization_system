@@ -60,6 +60,7 @@ async def create_tenant(payload: TenantCreateRequest, request: Request) -> dict:
     return {
         "tenant": tenant.model_dump(),
         "virtual_key": key.virtual_key_masked if key else None,
+        "raw_key": key.raw_key if key else None,  # one-time secret, never re-shown
         "key_provisioned": key is not None,
     }
 
@@ -140,5 +141,6 @@ async def rotate_key(tenant_id: str, request: Request) -> dict:
     return {
         "tenant_id": tenant_id,
         "virtual_key": new_key.virtual_key_masked if new_key else None,
+        "raw_key": new_key.raw_key if new_key else None,  # one-time secret
         "key_provisioned": new_key is not None,
     }

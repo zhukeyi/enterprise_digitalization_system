@@ -95,13 +95,19 @@ class Tenant(BaseModel):
 
 
 class TenantKey(BaseModel):
-    """A LiteLLM virtual key bound to a tenant."""
+    """A LiteLLM virtual key bound to a tenant.
+
+    ``raw_key`` holds the actual secret **once**, right after generation, so the
+    caller can use it. It is ``exclude=True`` and never serialized/stored, so
+    later reads (e.g. list/get tenant) only ever return the masked form.
+    """
 
     key_id: str
     tenant_id: str
     virtual_key_masked: str
     budget_usd: float
     models: list[str] = Field(default_factory=list)
+    raw_key: str | None = Field(default=None, exclude=True)
     created_at: str = Field(
         default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds")
     )
