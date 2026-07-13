@@ -2,17 +2,15 @@
 # FDE AI Platform — Production Docker Compose
 # ===================================================================
 # Usage:
-#   docker compose -f deploy/docker-compose.prod.yml up -d
-#   docker compose -f deploy/docker-compose.prod.yml ps
-#   docker compose -f deploy/docker-compose.prod.yml down
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml ps
+#   docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml down
 #
 # Pre-requisites:
-#   1. Copy deploy/config-templates/.env.prod to .env.prod and edit
+#   1. cp deploy/config-templates/.env.prod.example deploy/.env.prod and edit
 #   2. Ensure DNS points to this server
-#   3. Run: export FDE_ENV=production
+#   3. (one-click) ./deploy/scripts/up.sh
 # ===================================================================
-
-version: "3.9"
 
 services:
   # ── Nginx Reverse Proxy (TLS termination) ──────────────────────
@@ -91,7 +89,7 @@ services:
       - FEISHU_APP_ID=${FEISHU_APP_ID:-}
       - FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-}
     env_file:
-      - config-templates/.env.prod
+      - .env.prod
     depends_on:
       postgres:
         condition: service_healthy

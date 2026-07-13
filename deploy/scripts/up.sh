@@ -11,26 +11,27 @@
 #   ./deploy/scripts/up.sh
 #
 # Pre-req: copy and fill the env template first:
-#   cp deploy/config-templates/.env.prod .env.prod
-#   ${EDITOR} .env.prod   # set POSTGRES_*, JWT_*, LITELLM_*, provider keys
+#   cp deploy/config-templates/.env.prod.example deploy/.env.prod
+#   ${EDITOR} deploy/.env.prod   # set POSTGRES_*, JWT_*, LITELLM_*, provider keys
 # ===================================================================
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."   # repo root
 
-if [ ! -f .env.prod ]; then
-  echo "ERROR: .env.prod not found. Copy deploy/config-templates/.env.prod and fill it." >&2
+if [ ! -f deploy/.env.prod ]; then
+  echo "ERROR: deploy/.env.prod not found. Copy the template and fill it:" >&2
+  echo "  cp deploy/config-templates/.env.prod.example deploy/.env.prod" >&2
   exit 1
 fi
 
 echo "==> Validating compose configuration"
-docker compose -f deploy/docker-compose.prod.yml config >/dev/null
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml config >/dev/null
 
 echo "==> Pulling images"
-docker compose -f deploy/docker-compose.prod.yml pull
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml pull
 
 echo "==> Starting stack (LiteLLM + Postgres + FDE backend + Qdrant + nginx + observability)"
-docker compose -f deploy/docker-compose.prod.yml up -d
+docker compose --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml up -d
 
 echo "==> Waiting for fde-backend health"
 for i in $(seq 1 30); do
