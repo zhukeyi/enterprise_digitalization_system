@@ -30,7 +30,24 @@ __all__ = ["CustomsCampaignROI"]
 
 
 class CustomsCampaignROI:
-    """Attributes ROI across customs audience segments as channels."""
+    """Attributes ROI across customs audience segments as channels.
+
+    Funnel parameters are differentiated by segment characteristics so that
+    OLS regression produces a meaningful spend→revenue relationship:
+
+    * **conversion_rate** scales by ``growth_tier`` — rising buyers are more
+      likely to convert than declining ones.
+    * **deal_value** scales by the segment's aggregate ``total_value_usd``
+      relative to the median, so higher-value segments yield larger deals.
+    """
+
+    # Growth-tier conversion multipliers (applied to base conversion_rate).
+    _GROWTH_CONV: dict[str, float] = {
+        "rising": 1.5,
+        "stable": 1.0,
+        "declining": 0.5,
+        "unknown": 0.8,
+    }
 
     def __init__(
         self,
@@ -44,8 +61,10 @@ class CustomsCampaignROI:
 
         Args:
             cost_per_contact: Expected cost to reach one deliverable buyer.
-            conversion_rate: Fraction of reached buyers that convert to a deal.
-            deal_value: Average revenue per converted buyer.
+            conversion_rate: Base fraction of reached buyers that convert to a
+                deal (adjusted per-segment by growth tier).
+            deal_value: Base average revenue per converted buyer (scaled by
+                segment aggregate value).
             impressions_per_contact: Impressions generated per contact (for CTR).
         """
         self._cpl = cost_per_contact
@@ -104,11 +123,18 @@ class CustomsCampaignROI:
 
     def _to_platform(self, segment: CustomsAudienceSegment) -> PlatformPerformance:
         n = max(1, segment.deliverable_count)
+        # Differentiate conversion rate by growth tier.
+        growth_mult = self._GROWTH_CONV.get(segment.growth_tier.value, 1.0)
+        conv = self._conv * growth_mult
+        # Scale deal value by segment value relative to a $100k baseline.
+        # A segment with $500k aggregate value → 5× deal value multiplier (capped at 3×).
+        value_mult = min(3.0, max(0.5, segment.total_value_usd / 100_000.0))
+        deal = self._deal * value_mult
         spend = round(self._cpl * n, 2)
-        revenue = round(self._deal * self._conv * n, 2)
+        revenue = round(deal * conv * n, 2)
         impressions = n * self._impr
         clicks = max(1, int(impressions * 0.04))
-        conversions = max(1, int(n * self._conv))
+        conversions = max(1, int(n * conv))
         roas = revenue / spend if spend else 0.0
         return PlatformPerformance(
             platform=f"{segment.category}@{segment.port}",

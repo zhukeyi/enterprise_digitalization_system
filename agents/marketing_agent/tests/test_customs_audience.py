@@ -148,3 +148,34 @@ def test_deliverable_buyer_contains_only_derivative_fields():
             assert isinstance(b, object)
             assert b.name
             assert b.total_value_usd >= 0
+
+
+def test_filter_by_country():
+    """country filter restricts segmentation to buyers from a specific country."""
+    buyers = _sample_buyers()
+    # Add a buyer from Japan
+    buyers.append(_buyer(name="Japanese Corp", country="JP", import_count=25,
+                         value=400_000.0, hs=["8517"], ports=["Osaka"],
+                         last_seen="2026-01-01"))
+    connector = CustomsAudienceConnector()
+    segs = connector.build_from_buyers(buyers, country="JP")
+    assert len(segs) == 1
+    assert segs[0].port == "osaka"
+    assert all(
+        b.country == "JP" for s in segs for b in s.deliverable_buyers
+    )
+
+
+def test_filter_by_min_import_count():
+    """min_import_count drops buyers below the shipment threshold."""
+    connector = CustomsAudienceConnector()
+    # All sample buyers have import_count: 30,50,8,3,12
+    # min_import_count=10 → drops Initech (8) and Umbrella (3)
+    segs = connector.build_from_buyers(_sample_buyers(), min_import_count=10)
+    for s in segs:
+        for b in s.deliverable_buyers:
+            assert b.import_count >= 10
+    # Umbrella (count=3) should not appear in any segment
+    assert not any(
+        b.name == "Umbrella Ltd" for s in segs for b in s.deliverable_buyers
+    )

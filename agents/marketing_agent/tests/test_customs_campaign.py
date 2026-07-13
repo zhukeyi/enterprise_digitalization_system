@@ -141,7 +141,7 @@ def test_push_email_corporate_allowed():
 def test_push_blocked_segment_refused():
     # find the blocked segment
     segs = client.get("/api/customs-campaign/segments").json()
-    blocked = [s for s in segs if s["compliance_status"] == "blocked"][0]
+    blocked = next(s for s in segs if s["compliance_status"] == "blocked")
     resp = client.post(
         "/api/customs-campaign/push",
         json={
@@ -174,3 +174,51 @@ def test_unknown_segment_404():
         json={"segment_id": "does-not-exist", "brand": "X"},
     )
     assert resp.status_code == 404
+
+
+def test_push_im_channel_allowed():
+    """IM channel (enterprise IM) is a valid push channel — no PII required."""
+    sid = _clean_segment_id()
+    resp = client.post(
+        "/api/customs-campaign/push",
+        json={
+            "segment_id": sid,
+            "channel": "im",
+            "address": "https://im.example.com/webhook",
+            "brand": "云栖智能",
+        },
+    )
+    assert resp.status_code == 200
+    # IM channel should succeed (no email/consent gate needed)
+    assert resp.json()["success"] is True
+
+
+def test_content_with_brand_id():
+    """Content generation with brand_id fuses brand keyword plan (C-9)."""
+    sid = _clean_segment_id()
+    resp = client.post(
+        "/api/customs-campaign/content",
+        json={
+            "segment_id": sid,
+            "brand": "云栖智能",
+            "brand_id": "BRAND-001",
+            "target_langs": ["en"],
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["geo_piece"]["geo_optimized"] is True
+    assert data["keywords"]
+
+
+def test_segment_id_format_is_url_safe():
+    """F1 regression: segment_id must not contain pipe characters."""
+    resp = client.get("/api/customs-campaign/segments")
+    assert resp.status_code == 200
+    for s in resp.json():
+        assert "|" not in s["segment_id"], (
+            f"segment_id contains pipe: {s['segment_id']}"
+        )
+        assert "--" in s["segment_id"], (
+            f"segment_id should use -- delimiter: {s['segment_id']}"
+        )

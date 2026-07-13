@@ -84,3 +84,43 @@ def test_empty_segments_safe():
     out = roi.attribute([])
     assert out["blended_roas"] == 0.0
     assert out["segments"] == []
+
+
+def test_roas_differs_across_segments():
+    """F3 regression: segments with different growth tiers and aggregate values
+    must produce *different* ROAS — not a constant.
+
+    Without differentiation, all segments share the same roas = deal*conv/cpl,
+    and OLS regression degenerates. This test guards against that.
+    """
+    buyers = [
+        # Rising + high value → highest ROAS
+        BuyerEntity(
+            raw_name="Alpha Corp", normalized_name="alpha corp",
+            import_count=30, total_value_usd=600_000.0,
+            top_hs_codes=["8517"], top_ports=["Shanghai"],
+            last_seen="2026-03-01",
+        ),
+        # Declining + low value → lowest ROAS
+        BuyerEntity(
+            raw_name="Beta Corp", normalized_name="beta corp",
+            import_count=12, total_value_usd=30_000.0,
+            top_hs_codes=["8708"], top_ports=["Los Angeles"],
+            last_seen="2021-01-01",
+        ),
+    ]
+    segs = CustomsAudienceConnector().build_from_buyers(buyers)
+    assert len(segs) == 2
+    roi = CustomsCampaignROI()
+    out = roi.attribute(segs)
+    roas_values = [s["roas"] for s in out["segments"]]
+    assert len(roas_values) == 2
+    # The two segments must have *different* ROAS
+    assert roas_values[0] != roas_values[1]
+    # Rising+high-value segment should have higher ROAS than declining+low-value
+    rising_idx = next(
+        i for i, s in enumerate(out["segments"])
+        if "Machinery" in s["channel"]
+    )
+    declining_idx = 1 - rising_idx
+    assert roas_values[rising_idx] > roas_values[declining_idx]

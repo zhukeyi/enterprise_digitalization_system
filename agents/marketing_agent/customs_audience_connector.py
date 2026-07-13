@@ -245,6 +245,7 @@ class CustomsAudienceConnector:
         growth_tier: GrowthTier | None = None,
         min_value_usd: float = 0.0,
         min_import_count: int = 0,
+        country: str | None = None,
     ) -> list[CustomsAudienceSegment]:
         """Synchronous variant: segment an explicit buyer list (test-friendly)."""
         ref_year = _current_year()
@@ -252,6 +253,8 @@ class CustomsAudienceConnector:
         cells: dict[tuple[str, str, FrequencyTier, GrowthTier], list[BuyerEntity]] = {}
         for b in buyers:
             if b.total_value_usd < min_value_usd or b.import_count < min_import_count:
+                continue
+            if country and (b.country or "").lower() != country.lower():
                 continue
             cat = _primary_hs_section(b)
             p = _primary_port(b)
@@ -327,7 +330,7 @@ class CustomsAudienceConnector:
         else:
             status = SegmentComplianceStatus.PARTIAL
 
-        seg_id = f"{category}|{port}|{freq.value}|{grow.value}"
+        seg_id = f"{category}--{port}--{freq.value}--{grow.value}"
         name = (
             f"{category} · {port or 'any'} · "
             f"{freq.value}频次 · {grow.value}增长"

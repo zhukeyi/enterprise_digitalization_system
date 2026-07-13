@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, watch, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
 import {
   getCampaignOverview, getCampaignSegments, generateCampaignContent, pushCampaign, attributeCampaignROI,
@@ -16,7 +16,11 @@ const brand = ref('云栖智能')
 // content
 const content = ref<CustomsContent | null>(null)
 const contentLoading = ref(false)
-const contentLangs = ref<string[]>(['en', 'ja', 'ko'])
+const _contentLangsStr = ref('en,ja,ko')
+const contentLangs = computed<string[]>({
+  get: () => _contentLangsStr.value.split(',').map(s => s.trim()).filter(Boolean),
+  set: (v: string) => { _contentLangsStr.value = v },
+})
 
 // push
 const pushChannel = ref<'portal' | 'webhook' | 'email'>('portal')
@@ -118,6 +122,13 @@ watch(selectedSegment, () => { content.value = null; pushResult.value = null })
 onMounted(async () => {
   try { await loadAll() } finally { loading.value = false }
 })
+
+onUnmounted(() => {
+  if (roiInst) {
+    roiInst.dispose()
+    roiInst = null
+  }
+})
 </script>
 
 <template>
@@ -187,7 +198,7 @@ onMounted(async () => {
             </div>
             <div class="field">
               <label>多语言版本（逗号分隔，如 en,ja,ko）</label>
-              <input class="input" v-model="contentLangs" placeholder="en,ja,ko" />
+              <input class="input" v-model="_contentLangsStr" placeholder="en,ja,ko" />
             </div>
             <button class="btn" :disabled="contentLoading" @click="genContent">
               {{ contentLoading ? '生成中…' : '生成 GEO 内容' }}
