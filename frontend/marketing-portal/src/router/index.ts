@@ -3,6 +3,7 @@ import GEODashboard from '../views/GEODashboard.vue'
 import ContentStudio from '../views/ContentStudio.vue'
 import AdManager from '../views/AdManager.vue'
 import ROIDashboard from '../views/ROIDashboard.vue'
+import CustomsCampaignView from '../views/CustomsCampaignView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,6 +12,7 @@ const router = createRouter({
     { path: '/content', name: 'content', component: ContentStudio },
     { path: '/ads', name: 'ads', component: AdManager },
     { path: '/roi', name: 'roi', component: ROIDashboard },
+    { path: '/customs', name: 'customs', component: CustomsCampaignView },
   ],
 })
 

@@ -182,6 +182,16 @@ try:
 except ImportError:
     logger.warning("Marketing agent router unavailable — /api/marketing endpoints disabled")
 
+# ── Customs → GEO Campaign Router (P1-C, C-12) ──────────────────
+
+try:
+    from agents.marketing_agent.customs_campaign_router import router as customs_campaign_router
+
+    app.include_router(customs_campaign_router)
+    logger.info("Customs-GEO campaign router registered at /api/customs-campaign/*")
+except ImportError:
+    logger.warning("Customs-GEO campaign router unavailable — /api/customs-campaign endpoints disabled")
+
 # ── Dify Bridge Router (Phase 0: register previously unregistered) ──
 
 try:

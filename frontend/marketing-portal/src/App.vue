@@ -14,6 +14,7 @@
         <RouterLink to="/content">内容工作室</RouterLink>
         <RouterLink to="/ads">广告投放</RouterLink>
         <RouterLink to="/roi">ROI 看板</RouterLink>
+        <RouterLink to="/customs">海关定向</RouterLink>
       </nav>
       <div class="status-bar">
         <span class="status-dot" />
