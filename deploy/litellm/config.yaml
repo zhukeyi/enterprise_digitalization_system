@@ -71,6 +71,20 @@ model_list:
       custom_llm_provider: dashscope
       api_key: os.environ/QWEN_API_KEY
 
+  # ── Local Ollama (dev-only) ───────────────────────────────────
+  # Requires Ollama running on the host (default :11434).
+  # In Docker, host.docker.internal resolves to the host machine.
+  # On Linux hosts without Docker Desktop, use --network=host or set
+  # OLLAMA_BASE_URL=http://172.18.0.1:11434 (Docker bridge IP).
+  # The api_key is a dummy non-empty string (Ollama ignores it).
+  # NOTE: Set FDE_MAP_LLM_MODEL=fde-local to enable LLM interpretation
+  # in map_agent; otherwise the rule-based template is used.
+  - model_name: fde-local
+    litellm_params:
+      model: ollama/qwen2.5:7b
+      api_base: os.environ/OLLAMA_BASE_URL
+      api_key: "ollama"
+
 # Routing fallbacks: if a primary alias errors, try the next.
 router_settings:
   # (optional) model group fallbacks configured per-call by tenants

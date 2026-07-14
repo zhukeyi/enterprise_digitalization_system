@@ -1,8 +1,9 @@
 """MapAI Interpreter — AI interpretation generator for spatial analysis results.
 
 Generates natural language interpretations of correlation results.
-Uses rule-based templates by default; can generate LLM prompts for
-richer interpretations via the routing gateway.
+Uses rule-based templates by default; can optionally call an LLM
+(via LiteLLMAdapter / Ollama) for richer, context-aware interpretations
+when ``FDE_MAP_LLM_MODEL`` is set.
 
 M3-T10-4: AI 解读节点
 """
@@ -10,10 +11,16 @@ M3-T10-4: AI 解读节点
 from __future__ import annotations
 
 import logging
+import os
 
 from agents.map_agent.models import CorrelationPairResult, CorrelationResponse, GeoEntity
 
 logger = logging.getLogger("fde.map.interpreter")
+
+# ── LLM config (env-controlled, opt-in) ──────────────────────────
+
+_MAP_LLM_MODEL = os.getenv("FDE_MAP_LLM_MODEL", "").strip()
+_LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL", "").strip().rstrip("/")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -210,6 +217,75 @@ class AnalysisInterpreter:
             f"{query_line}\n\n"
             f"要求: 1) 指出最显著的发现 2) 给出业务建议 3) 语言简洁专业"
         )
+
+    async def interpret_with_llm(
+        self,
+        response: CorrelationResponse,
+        entities: list[GeoEntity],
+        user_query: str = "",
+    ) -> str:
+        """Generate interpretation via LLM (Ollama/LiteLLM), fall back to rules.
+
+        Requires ``FDE_MAP_LLM_MODEL`` (e.g. ``fde-local``) and
+        ``LITELLM_PROXY_URL`` (e.g. ``http://localhost:11434/v1``).
+        If either is unset or the LLM call fails, falls back to
+        :meth:`interpret` (rule-based templates) gracefully.
+        """
+        if not _MAP_LLM_MODEL or not _LITELLM_PROXY_URL:
+            logger.debug("LLM interpretation disabled (FDE_MAP_LLM_MODEL/LITELLM_PROXY_URL unset)")
+            return self.interpret(response, entities, user_query)
+
+        prompt = self.build_llm_prompt(response, entities, user_query)
+        try:
+            llm_text = await _call_llm(prompt)
+        except Exception as exc:
+            logger.warning("LLM interpretation failed, falling back to rules: %s", exc)
+            return self.interpret(response, entities, user_query)
+
+        if not llm_text or not llm_text.strip():
+            logger.warning("LLM returned empty text, falling back to rules")
+            return self.interpret(response, entities, user_query)
+
+        logger.info("LLM interpretation generated: %d chars", len(llm_text))
+        return llm_text.strip()
+
+
+# ══════════════════════════════════════════════════════════════════
+# LLM call helper (OpenAI-compatible, works with Ollama /v1 or LiteLLM :4000)
+# ══════════════════════════════════════════════════════════════════
+
+
+async def _call_llm(prompt: str) -> str:
+    """Send prompt to the configured LLM endpoint (OpenAI-compatible).
+
+    Uses ``LITELLM_PROXY_URL`` as the base URL and ``FDE_MAP_LLM_MODEL``
+    as the model name. Works with both Ollama's ``/v1/chat/completions``
+    and LiteLLM proxy's ``/chat/completions``.
+    """
+    import httpx
+
+    url = f"{_LITELLM_PROXY_URL}/chat/completions"
+    payload = {
+        "model": _MAP_LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+        "max_tokens": 512,
+    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    # LiteLLM proxy requires a bearer token; Ollama ignores it.
+    master_key = os.getenv("LITELLM_MASTER_KEY", "")
+    if master_key:
+        headers["Authorization"] = f"Bearer {master_key}"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+    if resp.status_code != 200:
+        raise RuntimeError(f"LLM returned {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    choices = data.get("choices", [])
+    if not choices:
+        raise RuntimeError("LLM returned no choices")
+    return choices[0].get("message", {}).get("content", "")
 
 
 # ══════════════════════════════════════════════════════════════════

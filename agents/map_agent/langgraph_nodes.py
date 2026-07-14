@@ -19,7 +19,7 @@ from typing import Any
 
 from agents.map_agent.demo_data import get_all_demo_regions
 from agents.map_agent.engine import get_correlation_engine
-from agents.map_agent.interpreter import get_interpreter
+from agents.map_agent.interpreter import AnalysisInterpreter, get_interpreter
 from agents.map_agent.location_enrich import enrich_locations_sync
 from agents.map_agent.models import (
     AnalysisContext,
@@ -257,8 +257,9 @@ def compute_correlation(state: NodeState) -> NodeState:
 def generate_interpretation(state: NodeState) -> NodeState:
     """Node 3: Generate AI interpretation of correlation results.
 
-    Uses rule-based templates by default. Falls back gracefully
-    if correlation data is missing.
+    When ``FDE_MAP_LLM_MODEL`` is set, attempts LLM-based interpretation
+    first (via Ollama/LiteLLM). Falls back to rule-based templates on
+    any failure or if the env var is unset.
     """
     start = time.monotonic()
     correlation: CorrelationResponse | None = state.get("correlation")
@@ -278,7 +279,24 @@ def generate_interpretation(state: NodeState) -> NodeState:
         else:
             interpretation = "无相关性数据可用于生成解读."
     else:
-        interpretation = interpreter.interpret(correlation, entities, query)
+        # Try LLM first; falls back to rule templates on any error.
+        try:
+            import asyncio
+
+            interpretation = asyncio.get_event_loop().run_until_complete(
+                interpreter.interpret_with_llm(correlation, entities, query)
+            )
+        except RuntimeError:
+            # Event loop already running (e.g. inside FastAPI) — use thread.
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                interpretation = pool.submit(
+                    _run_llm_sync, interpreter, correlation, entities, query
+                ).result(timeout=45)
+        except Exception as exc:
+            logger.warning("LLM interpretation failed, using rules: %s", exc)
+            interpretation = interpreter.interpret(correlation, entities, query)
 
     logger.info("Interpretation generated: %d chars", len(interpretation))
 
@@ -288,6 +306,18 @@ def generate_interpretation(state: NodeState) -> NodeState:
     timing["generate_interpretation"] = int((time.monotonic() - start) * 1000)
     state["timing_ms"] = timing
     return state
+
+
+def _run_llm_sync(
+    interpreter: AnalysisInterpreter,
+    correlation: CorrelationResponse,
+    entities: list[GeoEntity],
+    query: str,
+) -> str:
+    """Run async LLM interpretation in a fresh event loop (for thread context)."""
+    import asyncio
+
+    return asyncio.run(interpreter.interpret_with_llm(correlation, entities, query))
 
 
 # ══════════════════════════════════════════════════════════════════
