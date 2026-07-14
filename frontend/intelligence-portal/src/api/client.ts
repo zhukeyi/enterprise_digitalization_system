@@ -65,8 +65,33 @@ export async function collectIntelligence(params: {
   query?: string
   url?: string
   max_items?: number
+  metadata?: Record<string, unknown>
 }): Promise<{ success: boolean; items_collected: number; error?: string; items?: IntelItem[] }> {
   const { data } = await client.post('/api/intelligence/collect', params)
+  return data
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Source expansion (P1-A, I-4)
+// ══════════════════════════════════════════════════════════════════
+
+export interface SourceTypeOption {
+  type: string
+  label: string
+  description: string
+}
+
+export interface RSSHubRouteCategory {
+  [category: string]: string[]
+}
+
+export async function getSourceTypes(): Promise<SourceTypeOption[]> {
+  const { data } = await client.get<SourceTypeOption[]>('/api/intelligence/source-types')
+  return data
+}
+
+export async function getRSSHubRoutes(): Promise<RSSHubRouteCategory> {
+  const { data } = await client.get<RSSHubRouteCategory>('/api/intelligence/rsshub/routes')
   return data
 }
 

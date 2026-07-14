@@ -64,6 +64,7 @@ class CollectRequest(BaseModel):
     url: str = ""
     max_items: int = 20
     label: str = ""
+    metadata: dict[str, Any] | None = None
 
 
 class CollectResponse(BaseModel):
@@ -174,7 +175,7 @@ async def overview() -> OverviewStats:
         ]
     else:
         source_types = [
-            {"name": st, "count": sum(1 for s in datastore.keys() if st in s)}
+            {"name": st, "count": sum(1 for s in datastore if st in s)}
             for st in ["rss", "web", "api"]
         ]
     source_types = [s for s in source_types if s["count"] > 0]
@@ -263,11 +264,17 @@ async def collect(req: CollectRequest) -> CollectResponse:
         source_type=st,
         url=url,
         max_items=req.max_items,
+        metadata=req.metadata,
     )
 
     try:
         pipeline = DataPipeline()
         result: PipelineResult = await pipeline.run(config)
+
+        # PipelineResult does not carry items directly; retrieve from datastore
+        from agents.data_agent.pipeline import get_datastore
+
+        cleaned_items = get_datastore().get(result.dataset_id, [])
         items = [
             {
                 "id": item.id,
@@ -275,14 +282,14 @@ async def collect(req: CollectRequest) -> CollectResponse:
                 "source": item.source_url or url,
                 "summary": (item.content or "")[:200],
             }
-            for item in result.items
+            for item in cleaned_items
         ]
         return CollectResponse(
             success=True,
-            items_collected=len(result.items),
+            items_collected=result.cleaned_count,
             items=items,
         )
-    except Exception as e:
+    except (ValueError, RuntimeError, OSError) as e:
         logger.error("Collection failed: %s", e)
         return CollectResponse(
             success=False, items_collected=0, items=[],
@@ -326,7 +333,6 @@ async def trends(days: int = 7) -> list[TrendItem]:
 
     for i in range(days - 1, -1, -1):
         day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
         date_key = day_start.strftime("%m-%d")
         counts_by_day[date_key] = 0
         keywords_by_day[date_key] = []
@@ -346,6 +352,27 @@ async def trends(days: int = 7) -> list[TrendItem]:
     return [
         TrendItem(date=d, count=counts_by_day[d], keywords=keywords_by_day[d])
         for d in counts_by_day
+    ]
+
+
+@router.get("/rsshub/routes", response_model=dict[str, list[str]])
+async def rsshub_routes() -> dict[str, list[str]]:
+    """返回预置的 RSSHub 贸易情报路由分类。"""
+    from agents.data_agent.scrapers.rsshub_scraper import TRADE_INTEL_ROUTES
+
+    return TRADE_INTEL_ROUTES
+
+
+@router.get("/source-types", response_model=list[dict[str, str]])
+async def source_types() -> list[dict[str, str]]:
+    """返回所有支持的数据源类型及说明。"""
+    return [
+        {"type": "web", "label": "Web Page (HTTP)", "description": "直接 HTTP 抓取网页"},
+        {"type": "rss", "label": "RSS/Atom Feed", "description": "标准 RSS/Atom 订阅源"},
+        {"type": "api", "label": "REST API", "description": "JSON REST API 端点"},
+        {"type": "customs", "label": "Customs Data", "description": "海关贸易数据"},
+        {"type": "rsshub", "label": "RSSHub Route", "description": "自托管 RSSHub 1000+ 路由"},
+        {"type": "crawl4ai", "label": "crawl4ai (LLM-ready)", "description": "深度网页抓取，输出 Markdown"},
     ]
 
 

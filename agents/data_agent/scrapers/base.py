@@ -113,14 +113,18 @@ class ScraperRegistry:
         Convenience method for pipeline initialization.
         """
         from agents.data_agent.scrapers.api_scraper import APIScraper
+        from agents.data_agent.scrapers.crawl4ai_scraper import Crawl4AIScraper
         from agents.data_agent.scrapers.customs_scraper import CustomsScraper
         from agents.data_agent.scrapers.http_scraper import HTTPScraper
         from agents.data_agent.scrapers.rss_scraper import RSSScraper
+        from agents.data_agent.scrapers.rsshub_scraper import RSSHubScraper
 
         self.register(HTTPScraper())
         self.register(RSSScraper())
         self.register(APIScraper())
         self.register(CustomsScraper())
+        self.register(Crawl4AIScraper())
+        self.register(RSSHubScraper())
         return self
 
     def __len__(self) -> int:

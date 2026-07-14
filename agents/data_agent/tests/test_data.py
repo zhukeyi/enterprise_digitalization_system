@@ -219,10 +219,13 @@ class TestScraperRegistry:
 
     def test_create_default_registers_all(self) -> None:
         reg = ScraperRegistry().create_default()
-        assert len(reg) == 3
+        assert len(reg) == 6
         assert SourceType.WEB in reg
         assert SourceType.RSS in reg
         assert SourceType.API in reg
+        assert SourceType.CUSTOMS in reg
+        assert SourceType.CRAWL4AI in reg
+        assert SourceType.RSSHUB in reg
 
     def test_list_types(self) -> None:
         reg = ScraperRegistry().create_default()
@@ -230,6 +233,8 @@ class TestScraperRegistry:
         assert SourceType.WEB in types
         assert SourceType.RSS in types
         assert SourceType.API in types
+        assert SourceType.CRAWL4AI in types
+        assert SourceType.RSSHUB in types
 
 
 # ══════════════════════════════════════════════════════════════════

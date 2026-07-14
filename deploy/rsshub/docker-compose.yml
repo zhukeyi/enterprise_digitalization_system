@@ -1,0 +1,96 @@
+# ===================================================================
+# FDE AI Platform — RSSHub (self-hosted, P1-A / I-1)
+# ===================================================================
+# RSSHub is an open-source RSS feed generator that turns "anything"
+# into RSS: 1000+ routes covering news, social media, government
+# sites, trade portals, academic indexes, etc.
+#
+# The FDE data_agent RSSScraper subscribes to RSSHub routes, giving
+# the intelligence module a single endpoint for all structured feeds.
+#
+# Port :1200 is chosen to avoid conflicts with LiteLLM (:4000),
+# Qdrant (:6333), and Dify (:3000).
+#
+# Usage:
+#   cd deploy/rsshub
+#   docker compose up -d
+#   curl -f http://localhost:1200/healthz
+#
+# Then from data_agent:
+#   SourceConfig(source_type=SourceType.RSS,
+#                url="http://localhost:1200/reuters/business")
+# ===================================================================
+
+services:
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: fde-rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      # --- Core ---
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      CACHE_PATH: redis://fde-rsshub-redis:6379/
+      CACHE_EXPIRE: "300"          # 5 min default TTL
+      CACHE_CONTENT_EXPIRE: "3600" # 1 hr for content cache
+      ACCESS_KEY: ${RSSHUB_ACCESS_KEY:-}
+      # --- Rate limiting ---
+      RATE_LIMIT_MAX: "100"
+      RATE_LIMIT_WINDOW: "60"
+      # --- Browser (Puppeteer) ---
+      # Disable Puppeteer — Chromium is too heavy for the 11G host.
+      # Routes that require JS rendering will be handled by crawl4ai
+      # worker (P1-A I-2) instead.
+      PuppeteerWSEndpoint: ""
+      CHROMIUM_PATH: ""
+      # --- Logging ---
+      LOG_LEVEL: warn
+    depends_on:
+      fde-rsshub-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:1200/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          # RSSHub itself is Node.js — lightweight. 512M is generous.
+          memory: 512M
+          cpus: "0.5"
+
+  fde-rsshub-redis:
+    image: redis:7-alpine
+    container_name: fde-rsshub-redis
+    restart: unless-stopped
+    volumes:
+      - rsshub-redis-data:/data
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+          cpus: "0.25"
+
+volumes:
+  rsshub-redis-data:
+    driver: local

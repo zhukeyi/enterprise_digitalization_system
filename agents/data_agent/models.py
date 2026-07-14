@@ -42,6 +42,8 @@ class SourceType(StrEnum):
     RSS = "rss"
     API = "api"
     CUSTOMS = "customs"
+    RSSHUB = "rsshub"
+    CRAWL4AI = "crawl4ai"
 
 
 # ══════════════════════════════════════════════════════════════════
