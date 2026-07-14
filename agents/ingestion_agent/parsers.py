@@ -7,16 +7,27 @@
 ingestion router 注册失败。规划允许 Docling 经 P0.5 spike 不通过时回退到
 ``pdfplumber + python-docx + openpyxl``——本实现即采用该回退路径，避免 ARM 机器上
 约 1.5G 的 torch 依赖（见 docs/master-delivery-plan.md P0.5 / P2b）。
+
+**P2-A 升级（Docling 可选后端）**：PDF 解析支持 ``docling`` 后端（``DocumentConverter``
+输出 Markdown → 结构化 Block），通过环境变量 ``FDE_PARSER_BACKEND`` 控制：
+``auto``（docling 优先、未安装则回退 pdfplumber，默认）/ ``docling``（强制，未装报错）/
+``pdfplumber``（强制回退）。Docling 依赖 torch VLM，列为可选依赖
+（``requirements-docling.txt``），不进入主依赖树，服务器保持零 torch。
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import os
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+# PDF 解析后端选择（P2-A）。docling 为可选增强，pdfplumber 为默认回退。
+_PDF_BACKEND = os.getenv("FDE_PARSER_BACKEND", "auto").lower()
 
 # 扩展名 → 解析器类型
 _EXT_LOADERS: dict[str, str] = {
@@ -164,6 +175,24 @@ def _parse_csv(data: bytes, filename: str) -> ParsedDocument:
 
 
 def _parse_pdf(data: bytes, filename: str) -> ParsedDocument:
+    """PDF 解析：后端由 ``FDE_PARSER_BACKEND`` 决定（P2-A）。
+
+    - ``pdfplumber``：强制使用轻量回退解析器。
+    - ``docling``：强制使用 Docling（未安装则抛 ImportError）。
+    - ``auto``（默认）：Docling 优先，未安装时自动回退 pdfplumber。
+    """
+    if _PDF_BACKEND == "pdfplumber":
+        return _parse_pdf_pdfplumber(data, filename)
+    if _PDF_BACKEND == "docling":
+        return _parse_pdf_docling(data, filename)
+    # auto：docling 优先，失败回退 pdfplumber
+    try:
+        return _parse_pdf_docling(data, filename)
+    except ImportError:
+        return _parse_pdf_pdfplumber(data, filename)
+
+
+def _parse_pdf_pdfplumber(data: bytes, filename: str) -> ParsedDocument:
     try:
         import pdfplumber
     except ImportError as exc:  # pragma: no cover - pdfplumber 为声明依赖
@@ -184,8 +213,124 @@ def _parse_pdf(data: bytes, filename: str) -> ParsedDocument:
         doc_type="pdf_upload",
         source_ref=filename,
         blocks=blocks,
-        meta={"content_type": "application/pdf", "file_type": "pdf"},
+        meta={"content_type": "application/pdf", "file_type": "pdf", "parser": "pdfplumber"},
     )
+
+
+def _parse_markdown_to_blocks(md: str, *, source: str = "docling") -> list[Block]:
+    """将 Markdown 文本解析为结构化 Block 列表（P2-A Docling 复用）。
+
+    表格（GitHub 风格 ```| a | b |``` 块）转为 TABLE block，其余按标题层级
+    标记为 HEADING / TEXT。表格解析复用 ``_grid_to_table``，与现有管线一致。
+    """
+    lines = md.split("\n")
+    blocks: list[Block] = []
+    i = 0
+    n = len(lines)
+    table_buf: list[str] = []
+
+    def _flush_table() -> None:
+        nonlocal table_buf
+        if len(table_buf) < 2:
+            # 不足表头+分隔行，当作文本处理
+            text = "\n".join(table_buf).strip()
+            if text:
+                blocks.append(Block(kind=BlockType.TEXT, text=text, loc={"source": source}))
+            table_buf = []
+            return
+        # 识别分隔行（|---|---|）
+        sep_idx = -1
+        for idx, row in enumerate(table_buf):
+            cells = [c.strip() for c in row.strip().strip("|").split("|")]
+            if idx > 0 and all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c != ""):
+                sep_idx = idx
+                break
+        if sep_idx <= 0:
+            text = "\n".join(table_buf).strip()
+            if text:
+                blocks.append(Block(kind=BlockType.TEXT, text=text, loc={"source": source}))
+            table_buf = []
+            return
+        # 切掉分隔行，仅保留表头 + 数据行
+        grid = []
+        for row in table_buf[:sep_idx] + table_buf[sep_idx + 1 :]:
+            grid.append([c.strip() for c in row.strip().strip("|").split("|")])
+        headers, rows = _grid_to_table(grid)
+        if rows:
+            blocks.append(_table_block(headers, rows, {"source": source}))
+        table_buf = []
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+        # 表格行检测：以 | 包裹或起始/结束含 |
+        if stripped.startswith("|") or (stripped.endswith("|") and "|" in stripped[:-1]):
+            table_buf.append(line)
+            i += 1
+            continue
+        # 非表格行：先 flush 累积的表格
+        if table_buf:
+            _flush_table()
+        if not stripped:
+            i += 1
+            continue
+        # 标题（# 层级）
+        m = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if m:
+            blocks.append(
+                Block(kind=BlockType.HEADING, text=m.group(2).strip(), loc={"source": source})
+            )
+        else:
+            blocks.append(Block(kind=BlockType.TEXT, text=stripped, loc={"source": source}))
+        i += 1
+    if table_buf:
+        _flush_table()
+    return blocks
+
+
+def _parse_pdf_docling(data: bytes, filename: str) -> ParsedDocument:
+    """Docling 后端（P2-A）：``DocumentConverter`` → Markdown → 结构化 Block。
+
+    惰性导入 docling；未安装时抛 ``ImportError``，由 ``_parse_pdf`` 回退。
+    表格/布局检测依赖 torch VLM，属可选重型依赖（见模块 docstring）。
+    """
+    try:
+        from docling.datamodel.base_models import DocumentStream
+        from docling.document_converter import DocumentConverter
+    except ImportError as exc:  # pragma: no cover - docling 为可选依赖
+        raise ImportError("docling 未安装，无法使用 docling 后端") from exc
+
+    stream = DocumentStream(name=filename, stream=io.BytesIO(data))
+    try:
+        result = DocumentConverter().convert(stream)
+    except Exception as exc:  # 转换失败（损坏/扫描件）→ 让上层回退
+        raise RuntimeError(f"docling 转换失败: {exc}") from exc
+    md = result.document.export_to_markdown()
+    blocks = _parse_markdown_to_blocks(md, source="docling")
+    return ParsedDocument(
+        doc_type="pdf_upload",
+        source_ref=filename,
+        blocks=blocks,
+        meta={"content_type": "application/pdf", "file_type": "pdf", "parser": "docling"},
+    )
+
+
+def parse_pdf_backend() -> str:
+    """返回当前生效的 PDF 解析后端（解析 ``auto`` 为实际后端）。
+
+    用于路由层/健康自检报告当前解析能力，以及测试断言后端选择。
+    """
+    if _PDF_BACKEND == "pdfplumber":
+        return "pdfplumber"
+    if _PDF_BACKEND == "docling":
+        return "docling"
+    # auto：探测 docling 是否可导入
+    try:
+        import docling  # noqa: F401
+
+        return "docling"
+    except ImportError:
+        return "pdfplumber"
 
 
 def _parse_docx(data: bytes, filename: str) -> ParsedDocument:
@@ -256,4 +401,5 @@ __all__ = [
     "ParsedDocument",
     "detect_file_type",
     "parse_file",
+    "parse_pdf_backend",
 ]

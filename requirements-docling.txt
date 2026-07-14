@@ -1,0 +1,22 @@
+# P2-A: Docling 可选解析后端依赖
+#
+# 安装方式（独立 venv，不污染主依赖树）:
+#   python3 -m venv venv-docling
+#   source venv-docling/bin/activate
+#   pip install -r requirements-docling.txt
+#
+# 启用 Docling 后端:
+#   export FDE_PARSER_BACKEND=docling   # 强制 Docling
+#   export FDE_PARSER_BACKEND=auto      # Docling 优先，未装回退 pdfplumber（默认）
+#   export FDE_PARSER_BACKEND=pdfplumber # 强制 pdfplumber
+#
+# 注意: Docling 依赖 torch (~800MB) + transformers + opencv，
+# 总安装体积约 1.5GB。生产 2C/11G 服务器建议仅在升配后启用。
+# 首次运行需从 HuggingFace 下载 VLM 模型（layout/table detection）。
+
+docling>=2.112.0
+torch>=2.10.0
+transformers>=4.40.0
+opencv-python-headless>=4.8.0
+rapidocr-onnxruntime>=1.3.0
+reportlab>=4.0.0
