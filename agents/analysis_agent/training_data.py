@@ -4,11 +4,13 @@ A-2: Provides schema context (DDL + example queries) to inject into
 the NL2SQL LLM prompt, improving SQL generation accuracy.
 
 Two modes:
-1. **In-memory** (default): Pre-built DDL + examples from the mock
-   schema. Zero external dependencies.
-2. **Qdrant** (optional): If Qdrant is available and configured, the
-   training chunks are vectorised and retrieved by semantic similarity
-   to the user query. Falls back to in-memory if Qdrant is unreachable.
+1. **In-memory keyword** (default, ``FDE_NL2SQL_USE_QDRANT`` unset/off):
+   Pre-built DDL + examples from the mock schema, ranked by keyword
+   overlap. Zero external dependencies.
+2. **Qdrant semantic** (opt-in, ``FDE_NL2SQL_USE_QDRANT=true``): The
+   training chunks are vectorised with the shared BGE embedding model
+   and retrieved by semantic similarity to the user query. Falls back
+   to in-memory keyword retrieval if Qdrant / embedding is unreachable.
 
 Usage::
 
@@ -21,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("fde.analysis.training_data")
@@ -192,12 +195,132 @@ def build_example_context(query: str, max_examples: int = 3) -> str:
     return "\n".join(lines).strip()
 
 
+# ══════════════════════════════════════════════════════════════════
+# Qdrant Semantic Retrieval (optional upgrade over keyword)
+# ══════════════════════════════════════════════════════════════════
+
+NL2SQL_QDRANT_COLLECTION = "fde_nl2sql_examples"
+
+# Runtime state (mutated by _ensure_initialised)
+_qdrant_ready = False
+_initialised = False
+
+
+def _qdrant_enabled() -> bool:
+    """Whether to attempt Qdrant-backed semantic retrieval.
+
+    Default OFF (in-memory keyword mode). Opt in on the server by
+    setting ``FDE_NL2SQL_USE_QDRANT=true`` (requires Qdrant + the
+    shared BGE embedding model).
+    """
+    val = os.getenv("FDE_NL2SQL_USE_QDRANT", "off").lower()
+    return val in ("1", "true", "on", "yes", "auto")
+
+
+async def _ensure_initialised() -> None:
+    """Lazily vectorise training examples into Qdrant (once).
+
+    Idempotent. On any failure (Qdrant down, embedding unavailable) it
+    logs a warning and leaves in-memory keyword retrieval active.
+    """
+    global _initialised, _qdrant_ready
+    if _initialised:
+        return
+    _initialised = True
+
+    if not _qdrant_enabled():
+        logger.info(
+            "NL2SQL training data: in-memory keyword mode (FDE_NL2SQL_USE_QDRANT=%s)",
+            os.getenv("FDE_NL2SQL_USE_QDRANT", "off"),
+        )
+        return
+
+    try:
+        from agents.ingestion_agent.store import get_embedding_model, get_vector_store
+        from agents.rag_agent.vector_store import CollectionConfig, VectorRecord
+
+        model = get_embedding_model()
+        store = get_vector_store()
+
+        probe = (await model.embed_batch(["NL2SQL probe text"]))[0]
+        dim = len(probe.vector)
+
+        if not store.collection_exists(NL2SQL_QDRANT_COLLECTION):
+            store.create_collection(
+                CollectionConfig(
+                    name=NL2SQL_QDRANT_COLLECTION,
+                    vector_size=dim,
+                    distance="Cosine",
+                )
+            )
+
+        docs = [f"{ex.nl_query}\n{ex.sql}" for ex in EXAMPLE_QUERIES]
+        vectors = await model.embed_batch(docs)
+        points = [
+            VectorRecord(
+                id=idx,
+                vector=vec.vector,
+                payload={
+                    "nl_query": ex.nl_query,
+                    "sql": ex.sql,
+                    "tables": ex.tables,
+                },
+            )
+            for idx, (ex, vec) in enumerate(zip(EXAMPLE_QUERIES, vectors, strict=True))
+        ]
+        store.upsert(points, collection=NL2SQL_QDRANT_COLLECTION)
+        _qdrant_ready = True
+        logger.info(
+            "NL2SQL training data vectorised → Qdrant '%s' (%d points, dim=%d)",
+            NL2SQL_QDRANT_COLLECTION,
+            len(points),
+            dim,
+        )
+    except Exception as exc:  # degrade gracefully
+        _qdrant_ready = False
+        logger.warning(
+            "NL2SQL Qdrant init failed (%s); falling back to in-memory keyword retrieval",
+            exc,
+        )
+
+
+async def _semantic_example_context(query: str, max_examples: int = 3) -> str | None:
+    """Retrieve example SQL via Qdrant semantic similarity.
+
+    Returns the formatted example block, or ``None`` when Qdrant is
+    not ready (the caller falls back to keyword retrieval).
+    """
+    if not _qdrant_ready or not query.strip():
+        return None
+    try:
+        from agents.ingestion_agent.store import get_embedding_model, get_vector_store
+
+        model = get_embedding_model()
+        store = get_vector_store()
+        qvec = (await model.embed_batch([query]))[0]
+        hits = store.search(qvec.vector, top_k=max_examples, collection=NL2SQL_QDRANT_COLLECTION)
+        if not hits:
+            return None
+        lines: list[str] = []
+        for h in hits:
+            pl = h.payload or {}
+            lines.append(f"-- {pl.get('nl_query', '')}")
+            lines.append(pl.get("sql", ""))
+            lines.append("")
+        return "\n".join(lines).strip() or None
+    except Exception as exc:  # degrade gracefully
+        logger.warning("NL2SQL semantic retrieval failed (%s); falling back to keyword", exc)
+        return None
+
+
 async def get_schema_context(query: str = "") -> str:
     """Build the full schema context for NL2SQL LLM prompt injection.
 
-    Combines DDL definitions with relevant example SQL queries.
-    This context is injected into the LLM prompt to improve SQL
-    generation accuracy.
+    Combines DDL definitions with relevant example SQL queries. When
+    Qdrant semantic retrieval is enabled it ranks examples by vector
+    similarity to the query; otherwise it uses in-memory keyword
+    overlap. This context is injected into the LLM prompt to improve
+    SQL generation accuracy.
 
     Args:
         query: The natural language query (used for example retrieval).
@@ -205,8 +328,11 @@ async def get_schema_context(query: str = "") -> str:
     Returns:
         A formatted string containing DDL and example queries.
     """
+    await _ensure_initialised()
     ddl = build_ddl_context()
-    examples = build_example_context(query)
+    examples = await _semantic_example_context(query)
+    if examples is None:
+        examples = build_example_context(query)
 
     return f"""\
 {ddl}
@@ -215,22 +341,10 @@ async def get_schema_context(query: str = "") -> str:
 {examples}"""
 
 
-# ══════════════════════════════════════════════════════════════════
-# Module-level singleton / initialization
-# ══════════════════════════════════════════════════════════════════
+async def init_training_data() -> None:
+    """Initialize (vectorise) NL2SQL training data into Qdrant.
 
-_initialised = False
-
-
-def init_training_data() -> None:
-    """Initialize training data.
-
-    In the current in-memory mode this is a no-op. When Qdrant vector
-    storage is added, this method will vectorise and upload the DDL +
-    example queries to the Qdrant collection.
+    Idempotent. Call explicitly at startup when semantic retrieval is
+    enabled, or rely on the lazy first ``get_schema_context`` call.
     """
-    global _initialised
-    if _initialised:
-        return
-    logger.info("Training data initialized (in-memory mode, %d examples)", len(EXAMPLE_QUERIES))
-    _initialised = True
+    await _ensure_initialised()

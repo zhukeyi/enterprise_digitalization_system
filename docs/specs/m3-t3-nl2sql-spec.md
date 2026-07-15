@@ -144,15 +144,20 @@ class NL2SQLResult(BaseModel):
 | `FDE_NL2SQL_LLM_MODEL` | NL2SQL 兜底模型名 | 兜底禁用，未匹配返回 `not configured` |
 | `LITELLM_PROXY_URL` | OpenAI 兼容代理地址 | 同上 |
 | `LITELLM_MASTER_KEY` | 代理鉴权 Bearer（可选） | 无鉴权头 |
+| `FDE_NL2SQL_USE_QDRANT` | 训练数据改为 Qdrant 语义检索 | `off`：内存关键词检索（零依赖） |
 
-### 13.3 Schema 训练数据注入（A-2）
+### 13.3 Schema 训练数据检索（A-2 → Qdrant 升级，2026-07-15）
 - `agents/analysis_agent/training_data.py` 提供 DDL + 12 条中文 NL→SQL 示例。
-- `get_schema_context(query)` 按关键词重叠度检索最相关示例，注入 LLM prompt 提升准确率。
-- 当前为内存检索（零外部依赖），预留 Qdrant 向量检索升级点（`init_training_data`）。
+- 默认「内存关键词重叠」检索（`build_example_context`），零外部依赖。
+- 设置 `FDE_NL2SQL_USE_QDRANT=true` 后，`_ensure_initialised()` 用共享 BGE 嵌入模型
+  将 12 条示例向量化进 Qdrant 集合 `fde_nl2sql_examples`（维度自动探测），
+  `get_schema_context` 改为按向量相似度召回最相关示例注入 prompt。
+- 优雅降级：Qdrant / 嵌入模型不可用时自动回退关键词检索，不影响 NL2SQL 主链路。
+- `init_training_data()`（异步）可显式在启动时预热，或首次 `get_schema_context` 惰性触发。
 
 ### 13.4 SQL 提取与安全
 - `_extract_sql()` 剥离 ` ```sql ` 代码围栏，仅接受以 `SELECT`/`WITH` 开头的语句，其余返回空串。
 - LLM 通道生成的所有 SQL 与规则引擎走同一 `sql_safety` 校验，杜绝注入与写操作。
 
 ### 13.5 测试覆盖
-`tests/test_analysis.py` 新增 `TestNL2SQLLLMFallback`（9）+ `TestTrainingData`（6），全套 90 tests 通过；ruff / mypy(strict, py3.13) 全绿。
+`tests/test_analysis.py` 新增 `TestNL2SQLLLMFallback`（9）+ `TestTrainingData`（6）+ `TestTrainingDataSemantic`（5），分析 Agent 共 99 tests 通过；ruff / mypy(strict, py3.13) 全绿。语义检索测试用 mock 嵌入/向量库验证「启用门控、优雅降级、命中召回」三条路径。

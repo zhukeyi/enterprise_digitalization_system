@@ -12,7 +12,9 @@ M3-T3: 35+ tests covering all modules:
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -513,6 +515,161 @@ class TestTrainingData:
         # All training examples must be read-only SELECT statements
         for ex in EXAMPLE_QUERIES:
             assert ex.sql.upper().lstrip().startswith(("SELECT", "WITH"))
+
+
+class TestTrainingDataSemantic:
+    """Qdrant semantic retrieval upgrade (A-2 continuation).
+
+    Verifies opt-in gating, graceful fallback on failure, and that the
+    semantic path is used when Qdrant + embedding are available.
+    Heavy deps (sentence-transformers) are mocked so the suite runs in
+    any environment.
+    """
+
+    def setup_method(self):
+        import agents.analysis_agent.training_data as td
+
+        self._td: Any = td
+        self._prev_env = os.environ.pop("FDE_NL2SQL_USE_QDRANT", None)
+        td._initialised = False
+        td._qdrant_ready = False
+
+    def teardown_method(self):
+        self._td._initialised = False
+        self._td._qdrant_ready = False
+        if self._prev_env is not None:
+            os.environ["FDE_NL2SQL_USE_QDRANT"] = self._prev_env
+        else:
+            os.environ.pop("FDE_NL2SQL_USE_QDRANT", None)
+
+    def test_qdrant_disabled_by_default(self):
+        assert self._td._qdrant_enabled() is False
+        os.environ["FDE_NL2SQL_USE_QDRANT"] = "off"
+        assert self._td._qdrant_enabled() is False
+
+    @pytest.mark.parametrize("val", ["true", "1", "on", "yes", "auto"])
+    def test_qdrant_enabled_variants(self, val):
+        os.environ["FDE_NL2SQL_USE_QDRANT"] = val
+        assert self._td._qdrant_enabled() is True
+
+    def test_graceful_fallback_when_init_fails(self):
+        os.environ["FDE_NL2SQL_USE_QDRANT"] = "true"
+
+        def raiser(*_a, **_k):
+            raise RuntimeError("embedding model unavailable")
+
+        with patch("agents.ingestion_agent.store.get_embedding_model", side_effect=raiser):
+            ctx = _run(get_schema_context("统计员工总数"))
+
+        # Must still produce a valid keyword-based context
+        assert "Example Queries" in ctx
+        assert "SELECT" in ctx
+        assert self._td._qdrant_ready is False
+
+    def test_semantic_retrieval_used_when_ready(self):
+        os.environ["FDE_NL2SQL_USE_QDRANT"] = "true"
+
+        class _FakeResult:
+            def __init__(self, vec):
+                self.vector = vec
+
+        class _FakeModel:
+            async def embed(self, _text, **_kw):
+                return _FakeResult([0.1, 0.2, 0.3, 0.4])
+
+            async def embed_batch(self, texts, **_kw):
+                return [_FakeResult([0.1 + 0.01 * i, 0.2, 0.3, 0.4]) for i in range(len(texts))]
+
+        class _FakeStore:
+            def __init__(self):
+                self.created = []
+                self.upserted: list[Any] = []
+                self._exists = False
+                self.hits: list[Any] = []
+
+            def collection_exists(self, _name=None):
+                return self._exists
+
+            def create_collection(self, cfg):
+                self.created.append(cfg)
+                self._exists = True
+
+            def upsert(self, points, collection=None):
+                self.upserted.extend(points)
+                return len(points)
+
+            def search(self, _vector, _top_k=10, _collection=None, **_kw):
+                return self.hits
+
+        fake_model = _FakeModel()
+        fake_store = _FakeStore()
+        from agents.rag_agent.vector_store import VectorRecord
+
+        fake_store.hits = [
+            VectorRecord(
+                id=0,
+                payload={
+                    "nl_query": "统计员工总数",
+                    "sql": "SELECT COUNT(*) FROM employees",
+                    "tables": ["employees"],
+                },
+            )
+        ]
+
+        with (
+            patch("agents.ingestion_agent.store.get_embedding_model", return_value=fake_model),
+            patch("agents.ingestion_agent.store.get_vector_store", return_value=fake_store),
+        ):
+            ctx = _run(get_schema_context("统计员工总数"))
+
+        # Semantic example should be injected
+        assert "SELECT COUNT(*) FROM employees" in ctx
+        assert self._td._qdrant_ready is True
+        assert len(fake_store.upserted) == len(EXAMPLE_QUERIES)
+        # Collection created with detected dimension
+        assert fake_store.created[0].vector_size == 4
+
+    def test_semantic_fallback_when_search_fails(self):
+        os.environ["FDE_NL2SQL_USE_QDRANT"] = "true"
+
+        class _FakeResult:
+            def __init__(self, vec):
+                self.vector = vec
+
+        class _FakeModel:
+            async def embed(self, _text, **_kw):
+                return _FakeResult([0.1, 0.2, 0.3, 0.4])
+
+            async def embed_batch(self, texts, **_kw):
+                return [_FakeResult([0.1, 0.2, 0.3, 0.4]) for _ in texts]
+
+        class _FakeStore:
+            def __init__(self):
+                self.upserted: list[Any] = []
+                self._exists = False
+
+            def collection_exists(self, _name=None):
+                return self._exists
+
+            def create_collection(self, _cfg):
+                self._exists = True
+
+            def upsert(self, points, collection=None):
+                self.upserted.extend(points)
+                return len(points)
+
+            def search(self, *_a, **_kw):
+                raise RuntimeError("Qdrant search unavailable")
+
+        with (
+            patch("agents.ingestion_agent.store.get_embedding_model", return_value=_FakeModel()),
+            patch("agents.ingestion_agent.store.get_vector_store", return_value=_FakeStore()),
+        ):
+            ctx = _run(get_schema_context("统计员工总数"))
+
+        # Falls back to keyword retrieval
+        assert "Example Queries" in ctx
+        assert "SELECT" in ctx
 
 
 # ══════════════════════════════════════════════════════════════════

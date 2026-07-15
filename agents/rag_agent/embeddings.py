@@ -68,7 +68,9 @@ def _default_query_instruction(model_name: str) -> str:
 class EmbeddingConfig(BaseModel):
     """Configuration for the embedding model."""
 
-    model_name: str = Field(default_factory=_default_model_name, description="HuggingFace model name")
+    model_name: str = Field(
+        default_factory=_default_model_name, description="HuggingFace model name"
+    )
     device: Literal["cpu", "cuda", "mps"] = Field(default="cpu", description="Inference device")
     batch_size: int = Field(default=8, ge=1, le=128, description="Max batch size")
     max_seq_length: int = Field(default=8192, description="Maximum sequence length (BGE-M3: 8192)")
@@ -333,7 +335,7 @@ class ONNXEmbeddingBackend:
         )
         self._max_seq_length = max_seq_length
         self._dimension: int = 0
-        self._query_instruction: str = _default_query_instruction(self._model_name)
+        self._query_instruction: str = _default_query_instruction(self._model_name or "")
         self._loaded = False
 
     @property
@@ -353,7 +355,7 @@ class ONNXEmbeddingBackend:
             ) from exc
 
         # Load config.json alongside the model for dimension / seq_len
-        config_path = Path(self._onnx_path).with_suffix(".config.json")
+        config_path = Path(self._onnx_path or "").with_suffix(".config.json")
         if config_path.exists():
             cfg = _json.loads(config_path.read_text())
             self._dimension = cfg.get("dimension", 512)
@@ -374,7 +376,7 @@ class ONNXEmbeddingBackend:
         )
 
         # Load tokenizer from the lightweight 'tokenizers' library (Rust, no torch)
-        tokenizer_path = Path(self._onnx_path).with_suffix(".tokenizer.json")
+        tokenizer_path = Path(self._onnx_path or "").with_suffix(".tokenizer.json")
         try:
             from tokenizers import Tokenizer
 
@@ -442,7 +444,7 @@ class ONNXEmbeddingBackend:
 
     def get_config(self) -> EmbeddingConfig:
         return EmbeddingConfig(
-            model_name=self._model_name,
+            model_name=self._model_name or "",
             device="cpu",
             max_seq_length=self._max_seq_length,
             query_instruction=self._query_instruction,
@@ -459,9 +461,7 @@ class ONNXEmbeddingBackend:
             return []
         return await self._encode(documents)
 
-    async def embed_batch(
-        self, texts: list[str], **kwargs: Any
-    ) -> list[EmbeddingResult]:
+    async def embed_batch(self, texts: list[str], **kwargs: Any) -> list[EmbeddingResult]:
 
         if not texts:
             return []
@@ -502,9 +502,7 @@ class ONNXEmbeddingBackend:
         if isinstance(self._tokenizer, _RustTokenizer):
             encodings = self._tokenizer.encode_batch(list(texts))
             input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
-            attention_mask = np.array(
-                [e.attention_mask for e in encodings], dtype=np.int64
-            )
+            attention_mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
         else:
             # transformers.AutoTokenizer (legacy fallback)
             tokens = self._tokenizer(
