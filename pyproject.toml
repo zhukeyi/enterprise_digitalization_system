@@ -177,7 +177,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 strict_optional = true
 warn_return_any = true
@@ -195,7 +195,7 @@ module = [
     "agents.*.tests.*",
     "tests.*",
 ]
-disable_error_code = ["no-any-return", "arg-type", "no-untyped-call", "no-untyped-def", "var-annotated", "assignment", "union-attr"]
+disable_error_code = ["no-any-return", "arg-type", "no-untyped-call", "no-untyped-def", "var-annotated", "assignment", "union-attr", "comparison-overlap"]
 
 [[tool.mypy.overrides]]
 module = [

@@ -63,20 +63,29 @@ async def _nl2sql_handler(
         max_results=max_results,
     )
 
-    # Step 1: Convert NL → SQL
+    # Step 1: Convert NL → SQL (rule engine)
     engine = get_engine()
     conversion = await engine.convert(request)
 
     if not conversion.matched:
-        # LLM fallback — Mock mode returns prompt
-        prompt = engine.build_llm_prompt(request)
-        return NL2SQLResult(
-            success=False,
-            sql="",
-            source="llm_fallback",
-            error=f"Rule engine could not match query. LLM prompt: {prompt}",
-            safety_check_passed=True,
-        ).model_dump()
+        # Step 1b: LLM fallback — call LLM to generate SQL
+        from agents.analysis_agent.training_data import get_schema_context
+
+        schema_ctx = await get_schema_context(query)
+        conversion = await engine.convert_with_llm(request, schema_context=schema_ctx)
+
+        if not conversion.matched:
+            # LLM not configured or call failed
+            return NL2SQLResult(
+                success=False,
+                sql="",
+                source="llm",
+                error=conversion.llm_error or conversion.reason,
+                safety_check_passed=True,
+            ).model_dump()
+
+        # LLM generated SQL — must pass safety validation (Step 2)
+        logger.info("NL2SQL LLM fallback generated SQL: %s", conversion.sql)
 
     # Step 2: Safety validation
     safety = validate_sql(conversion.sql)
@@ -196,12 +205,15 @@ async def _query_chart_data_handler(
     conversion = await engine.convert(request)
 
     if not conversion.matched:
-        return ChartData(
-            chart_type=chart_type,
-            labels=[],
-            datasets=[],
-            title="No data — query could not be converted",
-        ).model_dump()
+        # LLM fallback
+        conversion = await engine.convert_with_llm(request)
+        if not conversion.matched:
+            return ChartData(
+                chart_type=chart_type,
+                labels=[],
+                datasets=[],
+                title="No data — query could not be converted",
+            ).model_dump()
 
     # Safety check
     safety = validate_sql(conversion.sql)

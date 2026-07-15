@@ -194,7 +194,7 @@ class EmployeeProfiler:
             + self.STATUS_WEIGHT * status_score
         )
 
-        return min(total, 100.0)
+        return float(min(total, 100.0))
 
     # ── Risk Flags ───────────────────────────────────────────────
 

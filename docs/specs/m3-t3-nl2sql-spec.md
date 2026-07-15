@@ -127,3 +127,32 @@ class NL2SQLResult(BaseModel):
 - DB session：参考 `agents/governance_agent/database/session.py`
 - 测试 _run helper：参考 `agents/hr_agent/tests/test_hr.py` 的 `_run()` 函数
 - Mock 执行器：参考 `MockHRAdapter` 的内存数据模式
+
+## 13. LLM Fallback 实现（A-1 / A-2，2026-07-15）
+
+规则引擎无法匹配时，NL2SQL 由「Mock 提示」升级为「真实 LLM 调用」，落地 `FR-006`。
+
+### 13.1 调用链路
+1. `NL2SQLEngine.convert()` 规则引擎命中 → `source="rule_engine"`，直接返回 SQL。
+2. 规则未命中 → `integration._nl2sql_handler` 调用 `engine.convert_with_llm(request, schema_context)`。
+3. `convert_with_llm` 通过 `LITELLM_PROXY_URL` 调用 OpenAI 兼容端点（Ollama / LiteLLM 代理），返回 `source="llm"`。
+4. LLM 生成的 SQL **必须**再经 `sql_safety.validate_sql` 校验后才执行（只读、无 DML/DDL）。
+
+### 13.2 环境变量
+| 变量 | 作用 | 未设置时行为 |
+|------|------|-------------|
+| `FDE_NL2SQL_LLM_MODEL` | NL2SQL 兜底模型名 | 兜底禁用，未匹配返回 `not configured` |
+| `LITELLM_PROXY_URL` | OpenAI 兼容代理地址 | 同上 |
+| `LITELLM_MASTER_KEY` | 代理鉴权 Bearer（可选） | 无鉴权头 |
+
+### 13.3 Schema 训练数据注入（A-2）
+- `agents/analysis_agent/training_data.py` 提供 DDL + 12 条中文 NL→SQL 示例。
+- `get_schema_context(query)` 按关键词重叠度检索最相关示例，注入 LLM prompt 提升准确率。
+- 当前为内存检索（零外部依赖），预留 Qdrant 向量检索升级点（`init_training_data`）。
+
+### 13.4 SQL 提取与安全
+- `_extract_sql()` 剥离 ` ```sql ` 代码围栏，仅接受以 `SELECT`/`WITH` 开头的语句，其余返回空串。
+- LLM 通道生成的所有 SQL 与规则引擎走同一 `sql_safety` 校验，杜绝注入与写操作。
+
+### 13.5 测试覆盖
+`tests/test_analysis.py` 新增 `TestNL2SQLLLMFallback`（9）+ `TestTrainingData`（6），全套 90 tests 通过；ruff / mypy(strict, py3.13) 全绿。

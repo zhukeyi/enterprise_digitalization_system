@@ -32,7 +32,13 @@ from agents.analysis_agent.models import (
     SQLResult,
     TableSchema,
 )
-from agents.analysis_agent.nl2sql import NL2SQLEngine, get_engine, reset_engine
+from agents.analysis_agent.nl2sql import (
+    ConversionResult,
+    NL2SQLEngine,
+    _extract_sql,
+    get_engine,
+    reset_engine,
+)
 from agents.analysis_agent.schema_extractor import (
     MockSchemaExtractor,
     get_extractor,
@@ -41,6 +47,12 @@ from agents.analysis_agent.schema_extractor import (
 from agents.analysis_agent.sql_safety import (
     SQLSafetyValidator,
     validate_sql,
+)
+from agents.analysis_agent.training_data import (
+    EXAMPLE_QUERIES,
+    build_ddl_context,
+    build_example_context,
+    get_schema_context,
 )
 from agents.orchestrator.tools.registry import ToolRegistry
 
@@ -372,7 +384,7 @@ class TestNL2SQLEngine:
         request = NL2SQLRequest(query="今天天气怎么样")
         result = _run(engine.convert(request))
         assert result.matched is False
-        assert result.source == "llm_fallback"
+        assert result.source == "llm"
 
     def test_convert_empty_query(self):
         engine = NL2SQLEngine()
@@ -406,6 +418,101 @@ class TestNL2SQLEngine:
         e1 = get_engine()
         e2 = get_engine()
         assert e1 is e2
+
+
+# ══════════════════════════════════════════════════════════════════
+# Test: NL2SQL LLM Fallback (A-1)
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestNL2SQLLLMFallback:
+    """Test the LLM fallback channel (A-1) and SQL extraction helper."""
+
+    def test_extract_sql_plain(self):
+        assert _extract_sql("SELECT * FROM employees") == "SELECT * FROM employees"
+
+    def test_extract_sql_code_fence(self):
+        raw = "```sql\nSELECT * FROM employees\n```"
+        assert _extract_sql(raw) == "SELECT * FROM employees"
+
+    def test_extract_sql_code_fence_no_lang(self):
+        raw = "```\nSELECT name FROM employees\n```"
+        assert _extract_sql(raw) == "SELECT name FROM employees"
+
+    def test_extract_sql_with_cte(self):
+        raw = "WITH t AS (SELECT 1) SELECT * FROM t"
+        assert _extract_sql(raw) == raw
+
+    def test_extract_sql_empty(self):
+        assert _extract_sql("") == ""
+        assert _extract_sql("   ") == ""
+
+    def test_extract_sql_non_sql(self):
+        assert _extract_sql("I cannot answer that") == ""
+
+    def test_convert_with_llm_not_configured(self):
+        """When LLM env vars are unset, convert_with_llm returns matched=False."""
+        engine = NL2SQLEngine()
+        request = NL2SQLRequest(query="今天天气怎么样")
+        result = _run(engine.convert_with_llm(request))
+        assert result.matched is False
+        assert result.source == "llm"
+        assert "not configured" in result.reason.lower()
+
+    def test_build_llm_prompt_with_schema_context(self):
+        engine = NL2SQLEngine()
+        request = NL2SQLRequest(query="复杂分析查询")
+        prompt = engine.build_llm_prompt(request, schema_context="CREATE TABLE t (id INT)")
+        assert "复杂分析查询" in prompt
+        assert "CREATE TABLE t" in prompt
+        assert "Database Schema" in prompt
+
+    def test_conversion_result_has_llm_error_field(self):
+        result = ConversionResult(source="llm", matched=False, llm_error="boom")
+        assert result.llm_error == "boom"
+        assert result.source == "llm"
+
+
+# ══════════════════════════════════════════════════════════════════
+# Test: Training Data / Schema Context (A-2)
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestTrainingData:
+    """Test DDL + example SQL context building (A-2)."""
+
+    def test_build_ddl_context(self):
+        ddl = build_ddl_context()
+        assert "CREATE TABLE employees" in ddl
+        assert "CREATE TABLE sales" in ddl
+        assert "CREATE TABLE departments" in ddl
+        assert "CREATE TABLE products" in ddl
+
+    def test_build_example_context_relevance(self):
+        # A query about salary should surface salary-related examples
+        ctx = build_example_context("薪资大于50000的员工")
+        assert "salary" in ctx.lower()
+
+    def test_build_example_context_empty_query(self):
+        ctx = build_example_context("")
+        assert ctx  # non-empty default examples
+        assert "SELECT" in ctx
+
+    def test_build_example_context_max_examples(self):
+        ctx = build_example_context("员工", max_examples=2)
+        # Each example produces a "-- <nl>" comment line
+        comment_lines = [ln for ln in ctx.splitlines() if ln.startswith("-- ")]
+        assert len(comment_lines) <= 2
+
+    def test_get_schema_context_full(self):
+        ctx = _run(get_schema_context("统计员工总数"))
+        assert "CREATE TABLE" in ctx
+        assert "Example Queries" in ctx
+
+    def test_example_queries_all_select(self):
+        # All training examples must be read-only SELECT statements
+        for ex in EXAMPLE_QUERIES:
+            assert ex.sql.upper().lstrip().startswith(("SELECT", "WITH"))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -547,7 +654,7 @@ class TestIntegration:
 
         result = _run(registry.dispatch("nl2sql", query="今天天气怎么样"))
         assert result["success"] is False
-        assert result["source"] == "llm_fallback"
+        assert result["source"] == "llm"
 
     def test_dispatch_sql_execute(self):
         registry = ToolRegistry()

@@ -316,9 +316,7 @@ class SchemaExtractor(BaseSchemaExtractor):
 
     async def _execute_query(self, sql: str) -> list[dict[str, Any]]:
         """Execute a read-only query using the session factory."""
-        from sqlalchemy import (  # type: ignore[import-not-found]
-            text,
-        )
+        from sqlalchemy import text
 
         assert self._session_factory is not None
         async with self._session_factory() as session:

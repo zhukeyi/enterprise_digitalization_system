@@ -74,7 +74,7 @@ class SQLResult(BaseModel):
     execution_time_ms: float = Field(default=0.0, description="Execution time in milliseconds")
     source: str = Field(
         default="rule_engine",
-        description="SQL generation source: 'rule_engine' or 'llm_fallback'",
+        description="SQL generation source: 'rule_engine' or 'llm'",
     )
     truncated: bool = Field(default=False, description="Whether results were truncated")
 
@@ -108,7 +108,7 @@ class NL2SQLResult(BaseModel):
     sql: str = ""
     source: str = Field(
         default="rule_engine",
-        description="SQL generation source: 'rule_engine' or 'llm_fallback'",
+        description="SQL generation source: 'rule_engine' or 'llm'",
     )
     result: SQLResult | None = None
     error: str | None = None

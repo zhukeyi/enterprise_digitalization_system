@@ -452,7 +452,7 @@ class QueryExecutor(BaseExecutor):
             raise RuntimeError("No session factory configured for QueryExecutor")
 
         try:
-            from sqlalchemy import text  # type: ignore[import-not-found]
+            from sqlalchemy import text
 
             # Add LIMIT if not present (defense in depth)
             if "LIMIT" not in sql.upper():

@@ -1,10 +1,12 @@
 """NL2SQL Engine — natural language to SQL conversion.
 
 M3-T3: Rule-based NL2SQL with LLM fallback.
+A-1: LLM fallback now calls OpenAI-compatible endpoint (Ollama/LiteLLM).
 
 Architecture:
 1. Rule Engine: keyword → table/column/operator mapping → SELECT statement
-2. LLM Fallback: when rule engine can't match, return a prompt for LLM routing
+2. LLM Fallback: when rule engine can't match, call LLM to generate SQL,
+   then validate with sql_safety before returning.
 
 The rule engine covers common query patterns:
 - Table detection: "员工" → employees, "部门" → departments, "销售额" → sales, "产品" → products
@@ -18,6 +20,7 @@ The rule engine covers common query patterns:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 
@@ -25,6 +28,13 @@ from agents.analysis_agent.models import NL2SQLRequest
 from agents.analysis_agent.schema_extractor import BaseSchemaExtractor
 
 logger = logging.getLogger("fde.analysis.nl2sql")
+
+# ══════════════════════════════════════════════════════════════════
+# LLM Configuration (environment-driven, mirrors map_agent pattern)
+# ══════════════════════════════════════════════════════════════════
+
+_NL2SQL_LLM_MODEL = os.getenv("FDE_NL2SQL_LLM_MODEL", "").strip()
+_LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL", "").strip().rstrip("/")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -131,10 +141,11 @@ class ConversionResult:
     """Result of NL2SQL conversion."""
 
     sql: str = ""
-    source: str = "rule_engine"  # "rule_engine" | "llm_fallback"
+    source: str = "rule_engine"  # "rule_engine" | "llm"
     matched: bool = False
     table: str = ""
     reason: str = ""
+    llm_error: str = ""  # non-empty when LLM fallback was attempted but failed
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -170,7 +181,7 @@ class NL2SQLEngine:
         table = self._detect_table(query)
         if not table:
             return ConversionResult(
-                source="llm_fallback",
+                source="llm",
                 matched=False,
                 reason="No table keyword matched — requires LLM routing",
             )
@@ -376,23 +387,157 @@ class NL2SQLEngine:
         return None
 
     # ────────────────────────────────────────────────────────────────
-    # LLM Fallback Prompt
+    # LLM Fallback
     # ────────────────────────────────────────────────────────────────
 
-    def build_llm_prompt(self, request: NL2SQLRequest) -> str:
+    def build_llm_prompt(self, request: NL2SQLRequest, schema_context: str = "") -> str:
         """Build a prompt for the LLM fallback channel.
 
         When the rule engine cannot match the query, this prompt is
-        sent to the intelligent routing gateway for LLM-based conversion.
+        sent to the LLM endpoint for SQL generation.
+
+        Args:
+            request: The NL2SQL request containing the query text.
+            schema_context: Optional DDL/schema context to inject (A-2).
         """
+        schema_block = f"\nDatabase Schema:\n{schema_context}\n" if schema_context else ""
         return (
-            f"Convert the following natural language query to a read-only SQL SELECT statement.\n"
+            "Convert the following natural language query to a read-only SQL SELECT statement.\n"
             f"Query: {request.query}\n"
-            f"Schema: {request.db_schema_id}\n"
+            f"Schema ID: {request.db_schema_id}\n"
+            f"{schema_block}"
             f"Max results: {request.max_results}\n"
-            f"Constraints: Only SELECT statements. No DML/DDL.\n"
-            f"Return only the SQL statement."
+            "Constraints:\n"
+            "- Only generate SELECT or WITH ... SELECT statements.\n"
+            "- No DML (INSERT/UPDATE/DELETE) or DDL (CREATE/ALTER/DROP).\n"
+            "- Return ONLY the SQL statement, no explanation.\n"
         )
+
+    async def convert_with_llm(
+        self,
+        request: NL2SQLRequest,
+        schema_context: str = "",
+    ) -> ConversionResult:
+        """Attempt LLM-based NL→SQL conversion when the rule engine fails.
+
+        Calls the OpenAI-compatible endpoint (Ollama/LiteLLM proxy) to
+        generate SQL from the natural language query. The generated SQL
+        is **not** executed here — callers must run ``validate_sql``
+        before execution.
+
+        Args:
+            request: The NL2SQL request containing the query text.
+            schema_context: Optional DDL/schema context to inject into
+                the LLM prompt (populated by A-2 training data).
+
+        Returns:
+            ConversionResult with ``source="llm"``. If LLM is not
+            configured or the call fails, ``matched=False`` and
+            ``llm_error`` is set.
+        """
+        if not _NL2SQL_LLM_MODEL or not _LITELLM_PROXY_URL:
+            logger.debug("NL2SQL LLM disabled (FDE_NL2SQL_LLM_MODEL/LITELLM_PROXY_URL unset)")
+            return ConversionResult(
+                source="llm",
+                matched=False,
+                reason="LLM not configured — set FDE_NL2SQL_LLM_MODEL and LITELLM_PROXY_URL",
+            )
+
+        prompt = self.build_llm_prompt(request, schema_context)
+        try:
+            raw = await _call_llm(prompt)
+        except Exception as exc:
+            logger.warning("NL2SQL LLM call failed: %s", exc)
+            return ConversionResult(
+                source="llm",
+                matched=False,
+                reason="LLM call failed",
+                llm_error=str(exc),
+            )
+
+        sql = _extract_sql(raw)
+        if not sql:
+            logger.warning("NL2SQL LLM returned empty/unparseable response")
+            return ConversionResult(
+                source="llm",
+                matched=False,
+                reason="LLM returned empty or unparseable response",
+                llm_error=f"raw={raw[:200]!r}",
+            )
+
+        logger.info("NL2SQL LLM: '%s' → '%s'", request.query, sql)
+        return ConversionResult(
+            sql=sql,
+            source="llm",
+            matched=True,
+            table="",
+        )
+
+
+# ══════════════════════════════════════════════════════════════════
+# LLM call helper (mirrors map_agent interpreter._call_llm pattern)
+# ══════════════════════════════════════════════════════════════════
+
+
+async def _call_llm(prompt: str) -> str:
+    """Send prompt to the configured OpenAI-compatible LLM endpoint.
+
+    Uses ``LITELLM_PROXY_URL`` as the base URL and
+    ``FDE_NL2SQL_LLM_MODEL`` as the model name. Works with both
+    Ollama's ``/v1/chat/completions`` and LiteLLM proxy's
+    ``/chat/completions``.
+    """
+    import httpx
+
+    url = f"{_LITELLM_PROXY_URL}/chat/completions"
+    payload = {
+        "model": _NL2SQL_LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": 512,
+    }
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    master_key = os.getenv("LITELLM_MASTER_KEY", "")
+    if master_key:
+        headers["Authorization"] = f"Bearer {master_key}"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+    if resp.status_code != 200:
+        raise RuntimeError(f"LLM returned {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    choices = data.get("choices", [])
+    if not choices:
+        raise RuntimeError("LLM returned no choices")
+    content = choices[0].get("message", {}).get("content", "")
+    return str(content)
+
+
+def _extract_sql(raw: str) -> str:
+    """Extract a SQL statement from the LLM response text.
+
+    Strips markdown code fences (```sql ... ```) and surrounding
+    whitespace. Returns an empty string if no SQL-like content found.
+    """
+    if not raw or not raw.strip():
+        return ""
+    text = raw.strip()
+
+    # Strip markdown code fences
+    if text.startswith("```"):
+        # Remove opening fence (with optional language tag)
+        text = re.sub(r"^```(?:sql|SQL)?\s*\n?", "", text)
+        text = re.sub(r"\n?```\s*$", "", text)
+        text = text.strip()
+
+    # Verify it looks like a SQL statement
+    if not text:
+        return ""
+    upper = text.upper().lstrip()
+    if not (upper.startswith("SELECT") or upper.startswith("WITH")):
+        return ""
+
+    return text
 
 
 # ══════════════════════════════════════════════════════════════════
