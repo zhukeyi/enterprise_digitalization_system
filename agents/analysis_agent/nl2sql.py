@@ -495,7 +495,7 @@ async def _call_llm(prompt: str) -> str:
         "model": _NL2SQL_LLM_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
-        "max_tokens": 512,
+        "max_tokens": 1024,
     }
     headers: dict[str, str] = {"Content-Type": "application/json"}
     master_key = os.getenv("LITELLM_MASTER_KEY", "")
