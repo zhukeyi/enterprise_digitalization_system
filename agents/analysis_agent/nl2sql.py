@@ -35,6 +35,7 @@ logger = logging.getLogger("fde.analysis.nl2sql")
 
 _NL2SQL_LLM_MODEL = os.getenv("FDE_NL2SQL_LLM_MODEL", "").strip()
 _LITELLM_PROXY_URL = os.getenv("LITELLM_PROXY_URL", "").strip().rstrip("/")
+_NL2SQL_LLM_TIMEOUT = float(os.getenv("FDE_NL2SQL_LLM_TIMEOUT", "120"))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -501,7 +502,7 @@ async def _call_llm(prompt: str) -> str:
     if master_key:
         headers["Authorization"] = f"Bearer {master_key}"
 
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(_NL2SQL_LLM_TIMEOUT)) as client:
         resp = await client.post(url, json=payload, headers=headers)
     if resp.status_code != 200:
         raise RuntimeError(f"LLM returned {resp.status_code}: {resp.text[:300]}")
